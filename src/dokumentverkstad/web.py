@@ -77,6 +77,21 @@ class CaptureApp:
       </ul>
     </section>
   </main>
+  <script>
+    const captureField = document.getElementById("content");
+    const captureForm = captureField.form;
+
+    captureField.addEventListener("keydown", (event) => {{
+      if (event.key === "Enter" && !event.shiftKey) {{
+        event.preventDefault();
+        if (captureForm.requestSubmit) {{
+          captureForm.requestSubmit();
+        }} else {{
+          captureForm.submit();
+        }}
+      }}
+    }});
+  </script>
 </body>
 </html>
 """

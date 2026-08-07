@@ -21,6 +21,16 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("autofocus", html)
             self.assertIn("North påminner om Boyd.", html)
 
+    def test_render_capture_submits_on_enter_but_not_shift_enter(self) -> None:
+        with workspace_tempdir() as tmp:
+            app = CaptureApp(Archive(Path(tmp) / "archive"))
+
+            html = app.render_capture()
+
+            self.assertIn('event.key === "Enter" && !event.shiftKey', html)
+            self.assertIn("event.preventDefault();", html)
+            self.assertIn("captureForm.requestSubmit()", html)
+
     def test_posted_form_creates_note(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
