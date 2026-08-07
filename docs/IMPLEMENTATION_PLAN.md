@@ -333,6 +333,8 @@ Denna iteration kräver:
 - textextraktion
 - checksumma
 - dublettkontroll
+- lokalt SQLite-index
+- möjlighet att återskapa indexet från arkivet
 
 ## Implementation
 
@@ -343,6 +345,8 @@ Iterationen implementerar:
 - metadataextraktion
 - lagring av originalfil
 - länk till originalfil
+- indexering av registrerade Documents
+- rebuild-index
 
 Ingen AI-analys sker ännu.
 
@@ -359,7 +363,7 @@ Iterationen är godkänd när:
 
 Iteration 4 är klar när följande scenario fungerar:
 
-> Anders sparar en rapport i Dropbox. Några sekunder senare finns den registrerad i Dokumentverkstad och kan användas precis som ett manuellt registrerat dokument.
+> Anders sparar en rapport i en konfigurerad Ingest Source, exempelvis en Dropbox-synkad lokal mapp. Dokumentverkstad registrerar dokumentet och gör det tillgängligt tillsammans med tidigare dokument.
 
 # Iteration 5 – Börja sortera
 
@@ -371,30 +375,39 @@ Nu börjar Dokumentverkstad aktivt hjälpa användaren att organisera sitt arbet
 
 Inbox är inte en lista över dokument.
 
-Inbox är en lista över beslut som väntar.
+Inbox är inte heller en egen kö.
+
+Inbox är en arbetsyta som visar de beständiga objekt i kunskapsrummet som enligt sin sparade status behöver användarens uppmärksamhet.
 
 ## Arbetsflöde
 
 Användaren öppnar Dokumentverkstad på telefonen.
 
-Inbox visar:
+Inbox visar exempelvis:
 
 - nya dokument,
-- dokument utan Project,
-- dokument som väntar på AI-analys,
-- andra objekt som behöver användarens uppmärksamhet.
+- dokument som ännu inte kopplats till Project,
+- dokument vars behandling skjutits upp,
+- andra objekt som väntar på ett användarbeslut.
 
-Användaren går igenom inkorgen ett objekt i taget.
+Användaren går igenom objekten ett i taget.
 
-Varje beslut leder direkt vidare till nästa.
+Varje beslut leder direkt vidare till nästa objekt.
 
 ## Infrastruktur
 
 Denna iteration kräver:
 
-- Inbox
-- status för "väntar på review"
-- enkel arbetskö
+- Inbox-vy
+- beständig status för triage
+- beständig status för review
+- minimal Trash
+- Restore
+- enkel arbetsmodell för objekt som väntar på beslut
+
+Inbox får cacheas i Runtime, men dess innehåll ska alltid kunna återskapas från Archive.
+
+Runtime får därför aldrig vara den auktoritativa lagringsplatsen för Inbox.
 
 ## Implementation
 
@@ -405,6 +418,12 @@ Iterationen implementerar:
 - beslut: kasta
 - beslut: koppla till Project
 - beslut: klar
+- minimal Trash
+- Restore
+
+Inbox ska kunna visa olika typer av objekt.
+
+I denna iteration används den främst för Documents, men modellen ska vara generell nog att senare även kunna hantera AI-kandidater utan att Inbox behöver byggas om.
 
 Inbox blir systemets startsida på telefon.
 
@@ -412,16 +431,19 @@ Inbox blir systemets startsida på telefon.
 
 Iterationen är godkänd när:
 
-- nya dokument hamnar i Inbox
-- ett beslut tar bort objektet från Inbox
+- nya dokument visas i Inbox
+- ett beslut uppdaterar objektets beständiga status
 - nästa objekt visas direkt
+- objekt som kastas återfinns i Trash
+- objekt kan återställas från Trash
+- Inbox kan återskapas efter att Runtime raderats
 - Inbox fungerar väl även på telefon
 
 ## Klart när
 
 Iteration 5 är klar när följande scenario fungerar:
 
-> Anders sitter på tåget och går igenom dagens nya dokument på telefonen. På några minuter har han sorterat allt utan att behöva öppna några avancerade vyer.
+> Anders sitter på tåget och går igenom dagens nya dokument på telefonen. Han kopplar några till projekt, skjuter upp några till senare och kastar ett dokument av misstag. När han upptäcker misstaget återställer han dokumentet från Trash och fortsätter sedan där han slutade.
 
 # Iteration 6 – Ta hjälp av AI
 
@@ -431,7 +453,9 @@ Den sjätte iterationen introducerar AI som en rådgivare.
 
 AI producerar aldrig etablerad kunskap.
 
-Den producerar endast kandidater.
+Den producerar endast kandidater som användaren kan acceptera, redigera eller avvisa.
+
+Målet är att AI ska minska användarens arbete utan att minska användarens kontroll.
 
 ## Arbetsflöde
 
@@ -439,9 +463,10 @@ Användaren öppnar ett nytt dokument.
 
 Systemet visar:
 
-- uppskattad kostnad,
+- vald AI-provider,
 - vald modell,
-- uppskattad tokenförbrukning.
+- uppskattad tokenförbrukning,
+- uppskattad kostnad.
 
 Användaren väljer att starta analysen.
 
@@ -453,7 +478,14 @@ AI producerar:
 - Candidate Questions
 - föreslagna Projects
 
-Allt placeras i Inbox för review.
+Samtliga kandidater visas i Inbox för review.
+
+Användaren kan:
+
+- acceptera,
+- redigera och acceptera,
+- avvisa,
+- skjuta upp.
 
 ## Infrastruktur
 
@@ -461,8 +493,9 @@ Denna iteration kräver:
 
 - AI-provider
 - provider-interface
-- kostnadsberäkning
 - promptsystem
+- kostnadsberäkning
+- review-flöde
 
 ## Implementation
 
@@ -475,76 +508,104 @@ Iterationen implementerar:
 - proveniens
 - review
 
-Ingen AI får skapa etablerade Knowledge Objects.
+Vid varje AI-körning ska systemet dessutom spara den metadata som krävs för framtida självobservation.
+
+Minst:
+
+- provider
+- modell
+- promptversion
+- faktisk tokenförbrukning
+- faktisk kostnad
+- confidence när sådan finns
+- review-beslut
+- eventuell avvisningsorsak
+
+Ingen AI får skapa etablerade Knowledge Objects utan användarens uttryckliga godkännande.
 
 ## Tester
 
 Iterationen är godkänd när:
 
-- AI aldrig körs utan godkännande
-- kostnad visas före körning
+- AI aldrig körs utan användarens godkännande
+- kostnad visas innan körningen startar
 - faktisk kostnad sparas
+- proveniens sparas
 - kandidater alltid kräver review
+- metadata för framtida självobservation sparas tillsammans med varje AI-körning
 
 ## Klart när
 
 Iteration 6 är klar när följande scenario fungerar:
 
-> Anders lägger in en rapport, väljer att använda moln-AI och får några minuter senare ett antal kandidater som kan accepteras, redigeras eller avvisas.
+> Anders lägger in en rapport, väljer att använda moln-AI och får några minuter senare ett antal kandidater. Han accepterar några, redigerar några och avvisar resten. Samtliga beslut och all AI-proveniens sparas automatiskt.
 
 # Iteration 7 – Lär av användningen
 
 ## Syfte
 
-Den sjunde iterationen introducerar systemets självobservation.
+Den sjunde iterationen gör den insamlade erfarenheten synlig.
 
-Dokumentverkstad ska kunna lära sig hur användaren arbetar utan att automatiskt förändra sitt beteende.
+Dokumentverkstad ska inte automatiskt förändra sitt beteende.
+
+Den ska hjälpa användaren att förstå hur systemet används och hur AI bidrar till arbetet.
 
 ## Arbetsflöde
 
-När användaren arbetar registrerar systemet:
+Efter en tids användning öppnar användaren administrationsvyn.
 
-- accepterade AI-förslag,
-- redigerade förslag,
-- avvisade förslag,
-- kostnader,
-- modeller,
-- svarstider.
+Där visas exempelvis:
 
-Ingen automatisk optimering sker ännu.
+- hur många AI-körningar som genomförts,
+- total kostnad,
+- kostnad per modell,
+- hur många kandidater som accepterats,
+- hur många som redigerats,
+- hur många som avvisats,
+- vilka typer av kandidater som oftast ändras.
 
-Systemet samlar endast erfarenheter.
+Systemet presenterar informationen.
+
+Det fattar inga egna beslut.
 
 ## Infrastruktur
 
 Denna iteration kräver:
 
-- loggning
-- statistik
-- analysdata
+- statistikmodul
+- rapportering
+- sammanställning av tidigare insamlad metadata
+
+Ingen ny datainsamling introduceras.
+
+Iterationen bygger helt på den metadata som redan samlats in i tidigare iterationer.
 
 ## Implementation
 
 Iterationen implementerar:
 
-- lagring av review-data
-- lagring av AI-statistik
-- lagring av kostnader
-- enkel administrationsvy
+- administrationsvy
+- AI-statistik
+- kostnadsöversikt
+- sammanställning av review-resultat
+- enkel visualisering av användningshistorik
+
+Systemet ska kunna sammanställa historiken utan att förändra den.
 
 ## Tester
 
 Iterationen är godkänd när:
 
-- review-data sparas
 - kostnader kan summeras
 - AI-användning kan följas över tid
+- review-statistik visas korrekt
+- sammanställningar kan återskapas från den sparade metadata som redan finns i Archive
 
 ## Klart när
 
 Iteration 7 är klar när följande scenario fungerar:
 
-> Anders kan efter några månaders användning se hur mycket AI som använts, vad den kostat och vilka typer av förslag som oftast accepterats.
+> Efter några månaders användning öppnar Anders Dokumentverkstad och ser hur mycket AI som använts, vad den kostat och vilka typer av AI-förslag som oftast accepterats, redigerats eller avvisats. Informationen hjälper honom att förstå sitt eget arbetssätt, men Dokumentverkstad förändrar inte sitt beteende automatiskt.
 
 # Iteration 8 – Låt Dokumentverkstad bli vardag
 
