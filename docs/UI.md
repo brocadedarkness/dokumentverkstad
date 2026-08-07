@@ -202,6 +202,14 @@ Kortkommandon ska komplettera, inte ersätta, synliga kontroller.
 
 ---
 
+## Capture ska vara optimerat för snabbt tangentbordsarbete.
+
+Enter sparar den aktuella noteringen.
+
+Shift+Enter infogar en ny rad.
+
+---
+
 # Inbox
 
 ## Syfte
