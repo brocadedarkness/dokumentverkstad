@@ -34,6 +34,8 @@ Detta är den auktoritativa representationen av användarens kunskapsrum.
 
 Den ska kunna flyttas mellan maskiner och överleva implementationer.
 
+Archive Root betraktas som användardata och ska inte versionshanteras tillsammans med applikationens källkod.
+
 ---
 
 ## 2. Runtime

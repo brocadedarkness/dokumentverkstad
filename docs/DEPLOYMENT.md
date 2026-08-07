@@ -90,6 +90,8 @@ Arkivet innehåller:
 
 Arkivet ska kunna flyttas till annan lagring utan förändringar i systemets kärna.
 
+Archive Root ska normalt ligga utanför Git-repositoryt.
+
 ---
 
 # Runtime

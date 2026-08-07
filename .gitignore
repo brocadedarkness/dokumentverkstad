@@ -1,3 +1,16 @@
+# Python
 __pycache__/
-.test_tmp/
-test_tmp/
+*.py[cod]
+.pytest_cache/
+
+# Runtime
+.dokumentverkstad/runtime/
+
+# User archive
+.dokumentverkstad/archive/
+
+# Eventuella loggar
+.dokumentverkstad/logs/
+
+# Lokala konfigurationsfiler (om de innehåller API-nycklar)
+.env
