@@ -306,6 +306,14 @@ Målet är att Dokumentverkstad ska kunna leva längre än de ramverk, AI-modell
 
 ---
 
+# 22. En ny användare ska kunna installera och starta Dokumentverkstad utan att manuellt skapa kataloger eller filer
+
+Dokumentverkstad ska skapa den katalogstruktur och de filer som behövs för att kunna användas.
+
+Om användaren vill ändra standardplaceringar eller annan konfiguration ska detta vara möjligt, men en standardinstallation ska fungera utan manuella förberedelser.
+
+---
+
 # Avslutning
 
 Dokumentverkstad ska utvecklas långsamt, medvetet och kumulativt.
