@@ -100,6 +100,99 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(loaded.source_location, "kapitel 4")
             self.assertEqual([item.id for item in linked_notes], [note.id])
 
+    def test_create_update_and_read_project(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+
+            project = archive.create_project("Rävfilosofi", "Ett arbetsområde.")
+            updated = archive.update_project(
+                project.id, name="Rävfilosofi 2", description="Ny beskrivning."
+            )
+            loaded = archive.get_project(project.id)
+
+            self.assertEqual(updated.name, "Rävfilosofi 2")
+            self.assertEqual(loaded.description, "Ny beskrivning.")
+
+    def test_knowledge_object_can_belong_to_multiple_projects(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            first_project = archive.create_project("Rävfilosofi")
+            second_project = archive.create_project("Institutioner")
+            note = archive.create_knowledge_object("North påminner om Boyd.")
+
+            updated = archive.set_knowledge_object_projects(
+                note.id, (first_project.id, second_project.id)
+            )
+
+            self.assertEqual(
+                updated.project_ids, (first_project.id, second_project.id)
+            )
+            self.assertEqual(
+                [item.id for item in archive.list_knowledge_objects_for_project(first_project.id)],
+                [note.id],
+            )
+            self.assertEqual(
+                [item.id for item in archive.list_knowledge_objects_for_project(second_project.id)],
+                [note.id],
+            )
+
+    def test_project_documents_are_derived_from_linked_knowledge_objects(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Rävfilosofi")
+            first_document = archive.create_document("Platon")
+            second_document = archive.create_document("North")
+            archive.create_knowledge_object(
+                "Notering A",
+                document_id=first_document.id,
+                project_ids=(project.id,),
+            )
+            archive.create_knowledge_object(
+                "Notering B",
+                document_id=first_document.id,
+                project_ids=(project.id,),
+            )
+            archive.create_knowledge_object(
+                "Notering C",
+                document_id=second_document.id,
+                project_ids=(project.id,),
+            )
+
+            documents = archive.list_documents_for_project(project.id)
+
+            self.assertEqual(
+                [document.title for document in documents], ["North", "Platon"]
+            )
+            self.assertNotIn("project", first_document.to_dict())
+
+    def test_knowledge_object_can_still_be_created_without_context(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+
+            note = archive.create_knowledge_object("Fristående tanke.")
+
+            self.assertEqual(note.document_id, "")
+            self.assertEqual(note.project_ids, ())
+
+    def test_relation_between_knowledge_objects_is_persistent(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive_root = Path(tmp) / "archive"
+            archive = Archive(archive_root)
+            first = archive.create_knowledge_object("North.")
+            second = archive.create_knowledge_object("Boyd.")
+
+            relation = archive.create_relation(
+                first.id, second.id, comment="Samma problem från olika håll."
+            )
+
+            restarted_archive = Archive(archive_root)
+            loaded = restarted_archive.get_relation(relation.id)
+
+            self.assertEqual(loaded.source_id, first.id)
+            self.assertEqual(loaded.target_id, second.id)
+            self.assertEqual(loaded.relation_type, "hör ihop med")
+            self.assertEqual(loaded.comment, "Samma problem från olika håll.")
+
 
 if __name__ == "__main__":
     unittest.main()
