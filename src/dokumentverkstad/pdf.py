@@ -57,7 +57,7 @@ def _strings_from_content(content: str) -> list[str]:
         strings.append(
             "".join(
                 _decode_pdf_string(match.group(1))
-                for match in re.finditer(r"\((?:\\.|[^\\)])*\)", array_match.group(1), re.DOTALL)
+                for match in re.finditer(r"\(((?:\\.|[^\\)])*)\)", array_match.group(1), re.DOTALL)
             )
         )
     return strings
