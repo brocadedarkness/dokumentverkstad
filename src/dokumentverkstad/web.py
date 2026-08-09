@@ -394,6 +394,11 @@ class CaptureApp:
   </style>
 </head>
 <body>
+  <nav aria-label="Huvudnavigation">
+    <a href="/capture">Capture</a>
+    <a href="/documents">Documents</a>
+    <a href="/projects">Projects</a>
+  </nav>
   <main>
 {body}
   </main>

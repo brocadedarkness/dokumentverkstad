@@ -1,15 +1,56 @@
 from __future__ import annotations
 
+from http.client import HTTPConnection
+from http.server import ThreadingHTTPServer
+import threading
 import unittest
 from pathlib import Path
 
 from dokumentverkstad.archive import Archive
 from dokumentverkstad.ingest import calculate_checksum
-from dokumentverkstad.web import CaptureApp
+from dokumentverkstad.web import CaptureApp, make_handler
 from helpers import workspace_tempdir, write_minimal_pdf
 
 
+def _get(server: ThreadingHTTPServer, path: str) -> str:
+    connection = HTTPConnection(server.server_address[0], server.server_address[1])
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read().decode("utf-8")
+    finally:
+        connection.close()
+
+    if response.status != 200:
+        raise AssertionError(f"GET {path} returned {response.status}: {body}")
+    return body
+
+
 class CaptureAppTests(unittest.TestCase):
+    def test_first_run_routes_are_navigable_before_any_object_exists(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive_root = Path(tmp) / "archive"
+            app = CaptureApp(Archive(archive_root))
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                root_html = _get(server, "/")
+                documents_html = _get(server, "/documents")
+                projects_html = _get(server, "/projects")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertIn('href="/documents"', root_html)
+            self.assertIn('href="/projects"', root_html)
+            self.assertIn("Inga dokument ännu.", documents_html)
+            self.assertIn("Inga projekt ännu.", projects_html)
+            self.assertTrue((archive_root / "documents").is_dir())
+            self.assertTrue((archive_root / "projects").is_dir())
+            self.assertTrue((archive_root / "knowledge").is_dir())
+
     def test_render_capture_has_empty_field_and_recent_notes(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
