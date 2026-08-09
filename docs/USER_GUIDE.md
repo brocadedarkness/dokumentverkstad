@@ -1,8 +1,8 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 4.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 5.
 
-Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, fånga noteringar som Knowledge Objects, arbeta med Projects och registrera PDF-filer från en konfigurerad Ingest Source.
+Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, gå igenom nya Documents i Inbox, fånga noteringar som Knowledge Objects, arbeta med Projects och registrera PDF-filer från en konfigurerad Ingest Source.
 
 ## Starta Dokumentverkstad
 
@@ -25,6 +25,8 @@ Som standard körs webbgränssnittet på:
 ```text
 http://127.0.0.1:8000/
 ```
+
+Startsidan är Inbox.
 
 ## Konfiguration
 
@@ -66,7 +68,8 @@ Här sparas:
 * extraherad dokumenttext,
 * Knowledge Objects,
 * Projects,
-* Relations.
+* Relations,
+* Trash-status för Documents.
 
 Archive är den auktoritativa datakällan. Runtime och index kan återskapas från Archive.
 
@@ -76,7 +79,7 @@ Archive är den auktoritativa datakällan. Runtime och index kan återskapas fr�
 
 Om katalogen saknas skapas den automatiskt vid start.
 
-Efter Iteration 4 används runtime för:
+Efter Iteration 5 används runtime för:
 
 * staging-kopia vid PDF-ingest,
 * SQLite-index över Documents.
@@ -103,6 +106,8 @@ Ange en titel och skapa dokumentet.
 
 Ett manuellt Document saknar digital originalfil men fungerar ändå som context för Capture och kan kopplas till Knowledge Objects.
 
+Nya manuellt skapade Documents hamnar i Inbox med status `new`.
+
 ## PDF-import
 
 Placera en PDF i den konfigurerade `ingest_source`.
@@ -126,11 +131,59 @@ Systemet gör då en enkel ingest-pass:
 * sparar originalfilen i Archive,
 * extraherar grundläggande metadata när möjligt,
 * extraherar maskinläsbar text till Archive,
+* lägger det nya Document i Inbox,
 * bygger om Document-indexet.
 
 Inga Knowledge Objects skapas automatiskt och ingen AI-analys körs.
 
 Endast PDF med maskinläsbar text stöds. OCR finns inte.
+
+## Inbox
+
+Öppna:
+
+```text
+/
+```
+
+eller:
+
+```text
+/inbox
+```
+
+Inbox visar Documents som väntar på beslut.
+
+Efter Iteration 5 kan Inbox visa:
+
+* nya Documents,
+* Documents markerade som senare.
+
+För varje Document kan du:
+
+* öppna Document-vyn,
+* koppla dokumentet direkt till ett eller flera Projects,
+* markera dokumentet som klart,
+* markera dokumentet som senare,
+* kasta dokumentet till Trash.
+
+Inbox är inte en separat lagringsplats. Den visar Documents utifrån deras sparade status i Archive.
+
+Om Inbox saknar objekt visas ett tomt tillstånd.
+
+## Trash och Restore
+
+Öppna:
+
+```text
+/trash
+```
+
+Documents som kastas från Inbox får status `trashed` och visas i Trash.
+
+Från Trash kan ett Document återställas. Ett återställt Document får status `new` och visas i Inbox igen.
+
+Trash är minimal i denna iteration. Inga permanenta raderingar görs automatiskt.
 
 ## Document-vy
 
@@ -145,6 +198,8 @@ Document-vyn visar:
 * titel,
 * om originalfil finns,
 * länk till original-PDF när sådan finns,
+* direkt kopplade Projects,
+* Inbox-status,
 * Capture med Document som context,
 * Knowledge Objects kopplade till dokumentet.
 
@@ -152,7 +207,7 @@ Original-PDF öppnas via webbläsaren som en PDF-fil. Dokumentverkstad innehåll
 
 ## Capture
 
-Capture finns på startsidan och i Document- och Project-vyer.
+Capture finns på `/capture` och i Document- och Project-vyer.
 
 I Capture:
 
@@ -193,12 +248,15 @@ Där kan du:
 * redigera namn och beskrivning,
 * öppna Project-vy,
 * använda Capture med Project som context,
+* koppla Documents direkt till Project från Inbox,
 * koppla befintliga Knowledge Objects till Project,
 * skapa enkla relationer mellan Knowledge Objects.
 
 Ett Knowledge Object kan tillhöra flera Projects.
 
-Project-vyn visar relevanta Documents genom de Knowledge Objects som ingår i projektet. Documents läggs inte i projektet.
+Ett Document kan också kopplas direkt till flera Projects.
+
+Project-vyn visar relevanta Documents både genom direkta Document-Project-kopplingar och genom de Knowledge Objects som ingår i projektet. Documents läggs inte i projektet som en mapp; kopplingen uttrycker att dokumentet är relevant arbetsmaterial.
 
 ## Rebuild Index
 
@@ -239,6 +297,7 @@ Exempel:
     relations/
       rel_<id>/
         relation.json
+    trash/
   runtime/
     ingest/
     sqlite/
@@ -251,12 +310,12 @@ Manuella Documents har normalt bara `metadata.json`.
 
 ## Begränsningar
 
-Följande finns inte efter Iteration 4:
+Följande finns inte efter Iteration 5:
 
-* Inbox,
 * AI,
-* Trash,
-* review-flöden,
+* AI-review,
+* AI-kandidater,
+* automatiska permanenta raderingar,
 * OCR,
 * EPUB-import,
 * avancerad sökning,
