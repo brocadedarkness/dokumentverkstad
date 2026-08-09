@@ -15,5 +15,8 @@ __pycache__/
 # Eventuella loggar
 .dokumentverkstad/logs/
 
+# Lokala testfiler
+/test_tmp/
+
 # Lokala konfigurationsfiler (om de innehåller API-nycklar)
 .env

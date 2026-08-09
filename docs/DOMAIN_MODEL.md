@@ -125,8 +125,9 @@ Själva dokumentets innehåll förändras inte av Dokumentverkstad.
 Ett Document kan:
 
 * fungera som källa för ett eller flera Knowledge Objects,
-* relateras till andra dokument,
-* förekomma i flera projekt genom sina relationer till Knowledge Objects.
+* relateras till andra Documents,
+* relateras direkt till ett eller flera Projects som relevant arbetsmaterial,
+* förekomma i flera Projects genom sina relationer till Knowledge Objects.
 
 ---
 
@@ -206,7 +207,7 @@ Ett **Project** är ett perspektiv på Dokumentverkstads kunskapsrum.
 
 Projekt producerar inte kunskap.
 
-De organiserar och avgränsar delar av kunskapsrummet för ett visst syfte.
+De organiserar och avgränsar delar av kunskapsrummet för ett visst syfte. Ett projekt kan omfatta både Documents och Knowledge Objects. Dokument representerar material som är relevant för projektet, medan Knowledge Objects representerar den kunskap som vuxit fram genom arbetet.
 
 Det finns inget särskilt objekt för "General". General utgör hela kunskapsrummet, medan projekt är utsnitt av detta.
 
@@ -235,11 +236,18 @@ Knowledge Objects består även om projekt förändras.
 
 ## Relationer
 
-Knowledge Objects kan tillhöra:
+Ett Project kan relateras till:
 
-* inget projekt,
-* ett projekt,
-* flera projekt.
+* Documents,
+* Knowledge Objects.
+
+Både Documents och Knowledge Objects kan tillhöra:
+
+* inget Project,
+* ett Project,
+* flera Projects.
+
+En direkt relation mellan ett Document och ett Project uttrycker att dokumentet utgör relevant arbetsmaterial för projektet. Den säger ingenting om vilken kunskap som senare kommer att bildas ur dokumentet.
 
 ---
 
