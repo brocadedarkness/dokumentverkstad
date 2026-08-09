@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 
 from .archive import Archive
+from .config import ensure_directory
 from .document import Document
 from .pdf import extract_pdf
 
@@ -20,11 +21,10 @@ class IngestResult:
 def process_ingest_source(
     archive: Archive, ingest_source: str | Path, runtime_root: str | Path
 ) -> list[IngestResult]:
-    source_root = Path(ingest_source)
-    if not source_root.exists():
-        return []
+    source_root = ensure_directory(ingest_source, "ingest_source")
+    runtime_root = ensure_directory(runtime_root, "runtime_root")
 
-    staging_root = Path(runtime_root) / "ingest"
+    staging_root = runtime_root / "ingest"
     staging_root.mkdir(parents=True, exist_ok=True)
 
     results: list[IngestResult] = []

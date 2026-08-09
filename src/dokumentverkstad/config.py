@@ -15,6 +15,10 @@ class AppConfig:
     port: int = 8000
 
 
+class ConfigurationError(Exception):
+    pass
+
+
 def load_config(config_path: str | Path | None = None) -> AppConfig:
     path = _resolve_config_path(config_path)
     data = _read_config(path) if path else {}
@@ -35,6 +39,26 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     )
 
 
+def ensure_app_directories(config: AppConfig) -> None:
+    ensure_directory(config.archive_root, "archive_root")
+    ensure_directory(config.runtime_root, "runtime_root")
+    ensure_directory(config.ingest_source, "ingest_source")
+
+
+def ensure_directory(path: str | Path, parameter_name: str) -> Path:
+    resolved = Path(path).expanduser().resolve()
+    try:
+        resolved.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        raise ConfigurationError(
+            _directory_error_message(resolved, parameter_name)
+        ) from error
+
+    if not resolved.is_dir():
+        raise ConfigurationError(_directory_error_message(resolved, parameter_name))
+    return resolved
+
+
 def _resolve_config_path(config_path: str | Path | None) -> Path | None:
     if config_path:
         return Path(config_path).expanduser().resolve()
@@ -51,12 +75,18 @@ def _resolve_config_path(config_path: str | Path | None) -> Path | None:
 
 
 def _read_config(path: Path) -> dict[str, object]:
-    with path.open("rb") as handle:
-        data = tomllib.load(handle)
-    return data
+    return tomllib.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _resolve_path(base: Path, path: Path) -> Path:
     if path.is_absolute():
         return path
     return (base / path).resolve()
+
+
+def _directory_error_message(path: Path, parameter_name: str) -> str:
+    return (
+        f"Kunde inte skapa katalogen för `{parameter_name}`.\n"
+        f"Sökväg: {path}\n"
+        f"Ändra konfigurationsparametern `{parameter_name}` till en skrivbar katalog."
+    )

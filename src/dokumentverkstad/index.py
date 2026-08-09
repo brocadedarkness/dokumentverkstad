@@ -11,7 +11,8 @@ def rebuild_document_index(archive: Archive, runtime_root: str | Path) -> Path:
     database_path = document_index_path(runtime_root)
     database_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with sqlite3.connect(database_path) as connection:
+    connection = sqlite3.connect(database_path)
+    try:
         connection.execute("DROP TABLE IF EXISTS documents")
         connection.execute(
             """
@@ -42,6 +43,9 @@ def rebuild_document_index(archive: Archive, runtime_root: str | Path) -> Path:
             """,
             [_document_row(document) for document in archive.list_documents()],
         )
+        connection.commit()
+    finally:
+        connection.close()
     return database_path
 
 
@@ -50,11 +54,14 @@ def list_indexed_documents(runtime_root: str | Path) -> list[dict[str, object]]:
     if not database_path.exists():
         return []
 
-    with sqlite3.connect(database_path) as connection:
+    connection = sqlite3.connect(database_path)
+    try:
         connection.row_factory = sqlite3.Row
         rows = connection.execute(
             "SELECT * FROM documents ORDER BY title COLLATE NOCASE"
         ).fetchall()
+    finally:
+        connection.close()
     return [dict(row) for row in rows]
 
 

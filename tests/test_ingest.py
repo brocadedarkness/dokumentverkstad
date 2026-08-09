@@ -95,6 +95,22 @@ class IngestTests(unittest.TestCase):
             self.assertEqual(loaded.title, "Persistent PDF")
             self.assertTrue(restarted_archive.original_file_path(document.id).exists())
 
+    def test_process_ingest_creates_missing_ingest_and_runtime_directories(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            archive = Archive(root / "archive")
+
+            results = process_ingest_source(
+                archive=archive,
+                ingest_source=root / "ingest",
+                runtime_root=root / "runtime",
+            )
+
+            self.assertEqual(results, [])
+            self.assertTrue((root / "ingest").is_dir())
+            self.assertTrue((root / "runtime").is_dir())
+            self.assertTrue((root / "runtime" / "ingest").is_dir())
+
 
 if __name__ == "__main__":
     unittest.main()

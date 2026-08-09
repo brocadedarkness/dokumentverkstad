@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .archive import Archive
-from .config import load_config
+from .config import ensure_app_directories, load_config
 from .document import Document
 from .project import Project
 
@@ -540,7 +540,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
 
 def main(config_path: str | None = None) -> None:
     config = load_config(config_path)
-    config.runtime_root.mkdir(parents=True, exist_ok=True)
+    ensure_app_directories(config)
     app = CaptureApp(Archive(config.archive_root))
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
     print(f"Dokumentverkstad Capture körs på http://{config.host}:{config.port}/")

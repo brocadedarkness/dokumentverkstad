@@ -49,9 +49,15 @@ port = 8000
 
 Relativa sökvägar tolkas relativt config-filens katalog.
 
+Om katalogerna inte finns skapas de normalt automatiskt första gången Dokumentverkstad används.
+
+Om du vill använda andra kataloger ändrar du `archive_root`, `runtime_root` eller `ingest_source` i config-filen. Ange kataloger som programmet har rätt att skapa och skriva till.
+
 ## Archive Root
 
 `archive_root` är den beständiga lagringen.
+
+Om katalogen saknas skapas den automatiskt vid start.
 
 Här sparas:
 
@@ -68,6 +74,8 @@ Archive är den auktoritativa datakällan. Runtime och index kan återskapas fr�
 
 `runtime_root` är lokal och återskapbar arbetsdata.
 
+Om katalogen saknas skapas den automatiskt vid start.
+
 Efter Iteration 4 används runtime för:
 
 * staging-kopia vid PDF-ingest,
@@ -78,6 +86,8 @@ Runtime ska inte betraktas som beständig användardata.
 ## Ingest Source
 
 `ingest_source` är en lokal katalog där PDF-filer kan placeras.
+
+Om katalogen saknas skapas den automatiskt vid start eller när `process-ingest` körs.
 
 Dropbox, iCloud eller liknande kan användas genom att deras klient synkar filer till denna lokala katalog. Dokumentverkstad använder ingen Dropbox- eller moln-API-integration.
 
@@ -96,6 +106,8 @@ Ett manuellt Document saknar digital originalfil men fungerar ändå som context
 ## PDF-import
 
 Placera en PDF i den konfigurerade `ingest_source`.
+
+Om Ingest Source-katalogen inte finns ännu kan du först starta Dokumentverkstad eller köra `process-ingest` en gång, så skapas katalogen.
 
 Kör sedan:
 
