@@ -41,6 +41,53 @@ class CaptureApp:
 """,
         )
 
+    def render_inbox(self) -> str:
+        documents = self.archive.list_inbox_documents()
+        rendered_documents = "\n".join(
+            self._render_inbox_document(document) for document in documents
+        )
+        if not rendered_documents:
+            rendered_documents = "<p>Inbox är tom.</p>"
+
+        return self._page(
+            title="Inbox",
+            body=f"""
+    <h1>Inbox</h1>
+    <section aria-labelledby="inbox-documents">
+      <h2 id="inbox-documents">Väntande documents</h2>
+      {rendered_documents}
+    </section>
+    <p><a href="/trash">Trash</a></p>
+""",
+        )
+
+    def render_trash(self) -> str:
+        documents = self.archive.list_trashed_documents()
+        rendered_documents = "\n".join(
+            f"""
+      <li>
+        <a href="/documents/{escape(document.id)}">{escape(document.title)}</a>
+        <form method="post" action="/trash/documents/{escape(document.id)}/restore">
+          <button type="submit">Återställ</button>
+        </form>
+      </li>
+"""
+            for document in documents
+        )
+        if not rendered_documents:
+            rendered_documents = "<li>Trash är tom.</li>"
+
+        return self._page(
+            title="Trash",
+            body=f"""
+    <h1>Trash</h1>
+    <ul>
+      {rendered_documents}
+    </ul>
+    <p><a href="/inbox">Inbox</a></p>
+""",
+        )
+
     def render_documents(self) -> str:
         documents = self.archive.list_documents()
         rendered_documents = "\n".join(
@@ -71,6 +118,17 @@ class CaptureApp:
     def render_document(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
         notes = self.archive.list_knowledge_objects_for_document(document.id)
+        linked_projects = [
+            project
+            for project in self.archive.list_projects()
+            if project.id in document.project_ids
+        ]
+        rendered_projects = ", ".join(
+            f"<a href=\"/projects/{escape(project.id)}\">{escape(project.name)}</a>"
+            for project in linked_projects
+        )
+        if not rendered_projects:
+            rendered_projects = "Inga projects"
         original_file = (
             f"<a href=\"/documents/{escape(document.id)}/original\">"
             f"{escape(document.original_filename or 'original.pdf')}</a>"
@@ -85,6 +143,10 @@ class CaptureApp:
     <dl>
       <dt>Originalfil</dt>
       <dd>{original_file}</dd>
+      <dt>Projects</dt>
+      <dd>{rendered_projects}</dd>
+      <dt>Inbox-status</dt>
+      <dd>{escape(document.inbox_status)}</dd>
     </dl>
     <section aria-labelledby="document-capture">
       <h2 id="document-capture">Capture</h2>
@@ -219,6 +281,14 @@ class CaptureApp:
             comment=form.get("comment", [""])[0],
         )
 
+    def update_inbox_document_from_form(self, document_id: str, body: bytes) -> None:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        project_ids = tuple(form.get("project_id", []))
+        decision = form.get("decision", [""])[0]
+        self.archive.set_document_projects(document_id, project_ids)
+        if decision:
+            self.archive.set_document_inbox_status(document_id, decision)
+
     def create_note_from_form(self, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
         content = form.get("content", [""])[0]
@@ -297,6 +367,35 @@ class CaptureApp:
         <button type="submit">Koppla</button>
       </form>
     </section>
+"""
+
+    def _render_inbox_document(self, document: Document) -> str:
+        project_options = "\n".join(
+            (
+                "<label>"
+                f"<input name=\"project_id\" type=\"checkbox\" value=\"{escape(project.id)}\""
+                f"{' checked' if project.id in document.project_ids else ''}>"
+                f"{escape(project.name)}</label>"
+            )
+            for project in self.archive.list_projects()
+        )
+        if not project_options:
+            project_options = "<p>Inga projects finns ännu.</p>"
+
+        return f"""
+      <article>
+        <h3><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></h3>
+        <p>Status: {escape(document.inbox_status)}</p>
+        <form method="post" action="/inbox/documents/{escape(document.id)}">
+          <fieldset>
+            <legend>Koppla till projects</legend>
+            {project_options}
+          </fieldset>
+          <button name="decision" type="submit" value="done">Klar</button>
+          <button name="decision" type="submit" value="later">Senare</button>
+          <button name="decision" type="submit" value="trashed">Kasta</button>
+        </form>
+      </article>
 """
 
     def _render_relation_form(self, notes: list[object]) -> str:
@@ -395,6 +494,7 @@ class CaptureApp:
 </head>
 <body>
   <nav aria-label="Huvudnavigation">
+    <a href="/inbox">Inbox</a>
     <a href="/capture">Capture</a>
     <a href="/documents">Documents</a>
     <a href="/projects">Projects</a>
@@ -428,7 +528,10 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
-            if parsed.path in ("/", "/capture"):
+            if parsed.path in ("/", "/inbox"):
+                self._send_html(app.render_inbox())
+                return
+            if parsed.path == "/capture":
                 params = parse_qs(parsed.query)
                 document_id = params.get("document_id", [""])[0]
                 project_id = params.get("project_id", [""])[0]
@@ -441,6 +544,9 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/projects":
                 self._send_html(app.render_projects())
+                return
+            if parsed.path == "/trash":
+                self._send_html(app.render_trash())
                 return
             if parsed.path.startswith("/documents/"):
                 document_path = unquote(parsed.path.removeprefix("/documents/"))
@@ -480,6 +586,23 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 app.create_relation_from_form(body)
                 self.send_response(HTTPStatus.SEE_OTHER)
                 self.send_header("Location", "/projects")
+                self.end_headers()
+                return
+
+            if parsed.path.startswith("/inbox/documents/"):
+                document_id = unquote(parsed.path.removeprefix("/inbox/documents/"))
+                app.update_inbox_document_from_form(document_id, body)
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", "/inbox")
+                self.end_headers()
+                return
+
+            if parsed.path.startswith("/trash/documents/") and parsed.path.endswith("/restore"):
+                document_path = unquote(parsed.path.removeprefix("/trash/documents/"))
+                document_id = document_path.removesuffix("/restore")
+                app.archive.restore_document(document_id)
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", "/trash")
                 self.end_headers()
                 return
 

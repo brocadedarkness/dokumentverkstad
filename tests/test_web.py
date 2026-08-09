@@ -26,6 +26,23 @@ def _get(server: ThreadingHTTPServer, path: str) -> str:
     return body
 
 
+def _post(server: ThreadingHTTPServer, path: str, body: str) -> tuple[int, str]:
+    connection = HTTPConnection(server.server_address[0], server.server_address[1])
+    try:
+        connection.request(
+            "POST",
+            path,
+            body=body.encode("utf-8"),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        response = connection.getresponse()
+        response_body = response.read().decode("utf-8")
+        location = response.getheader("Location", "")
+    finally:
+        connection.close()
+    return response.status, location or response_body
+
+
 class CaptureAppTests(unittest.TestCase):
     def test_first_run_routes_are_navigable_before_any_object_exists(self) -> None:
         with workspace_tempdir() as tmp:
@@ -50,6 +67,90 @@ class CaptureAppTests(unittest.TestCase):
             self.assertTrue((archive_root / "documents").is_dir())
             self.assertTrue((archive_root / "projects").is_dir())
             self.assertTrue((archive_root / "knowledge").is_dir())
+
+    def test_empty_inbox_has_clear_empty_state(self) -> None:
+        with workspace_tempdir() as tmp:
+            app = CaptureApp(Archive(Path(tmp) / "archive"))
+
+            html = app.render_inbox()
+
+            self.assertIn("Inbox är tom.", html)
+            self.assertIn("Trash", html)
+
+    def test_new_document_appears_in_inbox_and_can_be_opened(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Nytt dokument")
+            app = CaptureApp(archive)
+
+            html = app.render_inbox()
+
+            self.assertIn("Nytt dokument", html)
+            self.assertIn(f"/documents/{document.id}", html)
+
+    def test_inbox_document_can_be_linked_to_multiple_projects_and_marked_done(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("North")
+            first_project = archive.create_project("Rävfilosofi")
+            second_project = archive.create_project("Institutioner")
+            app = CaptureApp(archive)
+
+            app.update_inbox_document_from_form(
+                document.id,
+                (
+                    f"project_id={first_project.id}&project_id={second_project.id}"
+                    "&decision=done"
+                ).encode("utf-8"),
+            )
+
+            updated = archive.get_document(document.id)
+            self.assertEqual(
+                updated.project_ids, (first_project.id, second_project.id)
+            )
+            self.assertEqual(updated.inbox_status, "done")
+            self.assertEqual(archive.list_inbox_documents(), [])
+
+    def test_inbox_later_trash_and_restore_flow_over_http(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Väntande dokument")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, location = _post(
+                    server,
+                    f"/inbox/documents/{document.id}",
+                    "decision=later",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, "/inbox")
+                self.assertEqual(archive.get_document(document.id).inbox_status, "later")
+
+                status, location = _post(
+                    server,
+                    f"/inbox/documents/{document.id}",
+                    "decision=trashed",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, "/inbox")
+                self.assertIn("Väntande dokument", _get(server, "/trash"))
+
+                status, location = _post(
+                    server,
+                    f"/trash/documents/{document.id}/restore",
+                    "",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, "/trash")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(archive.get_document(document.id).inbox_status, "new")
 
     def test_render_capture_has_empty_field_and_recent_notes(self) -> None:
         with workspace_tempdir() as tmp:

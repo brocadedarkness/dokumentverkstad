@@ -17,12 +17,14 @@ class Archive:
         self.knowledge_root = self.root / "knowledge"
         self.projects_root = self.root / "projects"
         self.relations_root = self.root / "relations"
+        self.trash_root = self.root / "trash"
 
     def initialize(self) -> None:
         self.documents_root.mkdir(parents=True, exist_ok=True)
         self.knowledge_root.mkdir(parents=True, exist_ok=True)
         self.projects_root.mkdir(parents=True, exist_ok=True)
         self.relations_root.mkdir(parents=True, exist_ok=True)
+        self.trash_root.mkdir(parents=True, exist_ok=True)
 
     def create_document(
         self,
@@ -79,7 +81,7 @@ class Archive:
     def find_document_by_checksum(self, checksum_sha256: str) -> Document | None:
         if not checksum_sha256:
             return None
-        for document in self.list_documents():
+        for document in self.list_documents(include_trashed=True):
             if document.checksum_sha256 == checksum_sha256:
                 return document
         return None
@@ -128,14 +130,59 @@ class Archive:
         self.save_document(revised)
         return revised
 
-    def list_documents(self) -> list[Document]:
+    def list_documents(self, include_trashed: bool = False) -> list[Document]:
         self.initialize()
         documents = [
             self.get_document(path.parent.name)
             for path in self.documents_root.glob("*/metadata.json")
         ]
+        if not include_trashed:
+            documents = [
+                document
+                for document in documents
+                if document.inbox_status != "trashed"
+            ]
         documents.sort(key=lambda item: item.title.casefold())
         return documents
+
+    def list_inbox_documents(self) -> list[Document]:
+        documents = [
+            document
+            for document in self.list_documents()
+            if document.inbox_status in {"new", "later"}
+        ]
+        documents.sort(key=lambda item: item.updated_at, reverse=True)
+        return documents
+
+    def list_trashed_documents(self) -> list[Document]:
+        documents = [
+            document
+            for document in self.list_documents(include_trashed=True)
+            if document.inbox_status == "trashed"
+        ]
+        documents.sort(key=lambda item: item.updated_at, reverse=True)
+        return documents
+
+    def set_document_inbox_status(
+        self, document_id: str, inbox_status: str
+    ) -> Document:
+        document = self.get_document(document_id)
+        updated = document.with_inbox_status(inbox_status)
+        self.save_document(updated)
+        return updated
+
+    def restore_document(self, document_id: str) -> Document:
+        return self.set_document_inbox_status(document_id, "new")
+
+    def set_document_projects(
+        self, document_id: str, project_ids: tuple[str, ...]
+    ) -> Document:
+        for project_id in project_ids:
+            self.get_project(project_id)
+        document = self.get_document(document_id)
+        updated = document.with_projects(project_ids)
+        self.save_document(updated)
+        return updated
 
     def create_knowledge_object(
         self,
@@ -259,6 +306,9 @@ class Archive:
 
     def list_documents_for_project(self, project_id: str) -> list[Document]:
         document_ids: list[str] = []
+        for document in self.list_documents():
+            if project_id in document.project_ids:
+                document_ids.append(document.id)
         for knowledge_object in self.list_knowledge_objects_for_project(project_id):
             if knowledge_object.document_id and knowledge_object.document_id not in document_ids:
                 document_ids.append(knowledge_object.document_id)

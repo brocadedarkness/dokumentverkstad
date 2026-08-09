@@ -38,6 +38,8 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(loaded.year, "1807")
             self.assertEqual(loaded.comment, "Fysisk bok.")
             self.assertFalse(loaded.has_original_file)
+            self.assertEqual(loaded.inbox_status, "new")
+            self.assertEqual(loaded.project_ids, ())
 
     def test_document_metadata_can_be_updated(self) -> None:
         with workspace_tempdir() as tmp:
@@ -165,6 +167,56 @@ class ArchiveTests(unittest.TestCase):
             )
             self.assertNotIn("project", first_document.to_dict())
 
+    def test_document_can_be_linked_directly_to_multiple_projects(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            first_project = archive.create_project("Rävfilosofi")
+            second_project = archive.create_project("Institutioner")
+            document = archive.create_document("North")
+
+            updated = archive.set_document_projects(
+                document.id, (first_project.id, second_project.id)
+            )
+
+            self.assertEqual(
+                updated.project_ids, (first_project.id, second_project.id)
+            )
+            self.assertEqual(
+                [item.id for item in archive.list_documents_for_project(first_project.id)],
+                [document.id],
+            )
+            self.assertEqual(
+                [item.id for item in archive.list_documents_for_project(second_project.id)],
+                [document.id],
+            )
+
+    def test_project_documents_include_direct_and_knowledge_derived_documents_once(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Rävfilosofi")
+            direct_document = archive.create_document("Direkt dokument")
+            shared_document = archive.create_document("Båda vägar")
+            derived_document = archive.create_document("Via notering")
+            archive.set_document_projects(shared_document.id, (project.id,))
+            archive.set_document_projects(direct_document.id, (project.id,))
+            archive.create_knowledge_object(
+                "Notering",
+                document_id=shared_document.id,
+                project_ids=(project.id,),
+            )
+            archive.create_knowledge_object(
+                "Annan notering",
+                document_id=derived_document.id,
+                project_ids=(project.id,),
+            )
+
+            documents = archive.list_documents_for_project(project.id)
+
+            self.assertEqual(
+                [document.title for document in documents],
+                ["Båda vägar", "Direkt dokument", "Via notering"],
+            )
+
     def test_knowledge_object_can_still_be_created_without_context(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -192,6 +244,38 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(loaded.target_id, second.id)
             self.assertEqual(loaded.relation_type, "hör ihop med")
             self.assertEqual(loaded.comment, "Samma problem från olika håll.")
+
+    def test_document_inbox_status_and_restore_are_persistent(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive_root = Path(tmp) / "archive"
+            archive = Archive(archive_root)
+            document = archive.create_document("Nytt dokument")
+
+            self.assertEqual([item.id for item in archive.list_inbox_documents()], [document.id])
+
+            archive.set_document_inbox_status(document.id, "later")
+            restarted_archive = Archive(archive_root)
+            later_document = restarted_archive.get_document(document.id)
+
+            self.assertEqual(later_document.inbox_status, "later")
+            self.assertEqual(
+                [item.id for item in restarted_archive.list_inbox_documents()],
+                [document.id],
+            )
+
+            restarted_archive.set_document_inbox_status(document.id, "trashed")
+            self.assertEqual(restarted_archive.list_inbox_documents(), [])
+            self.assertEqual(
+                [item.id for item in restarted_archive.list_trashed_documents()],
+                [document.id],
+            )
+
+            restored = Archive(archive_root).restore_document(document.id)
+            self.assertEqual(restored.inbox_status, "new")
+            self.assertEqual(
+                [item.id for item in Archive(archive_root).list_inbox_documents()],
+                [document.id],
+            )
 
 
 if __name__ == "__main__":

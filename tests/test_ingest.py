@@ -37,11 +37,16 @@ class IngestTests(unittest.TestCase):
             self.assertEqual(document.document_type, "PDF")
             self.assertTrue(document.has_original_file)
             self.assertEqual(document.original_filename, "rapport.pdf")
+            self.assertEqual(document.inbox_status, "new")
             self.assertEqual(len(document.checksum_sha256), 64)
             self.assertTrue(archive.original_file_path(document.id).exists())
             self.assertIn(
                 "Institutions structure incentives.",
                 archive.extracted_text_file_path(document.id).read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                [item.id for item in archive.list_inbox_documents()],
+                [document.id],
             )
 
     def test_duplicate_pdf_does_not_create_second_document(self) -> None:
