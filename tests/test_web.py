@@ -107,6 +107,110 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(notes[0].content, "Ny notering")
             self.assertEqual(notes[0].source_location, "s. 35")
 
+    def test_project_form_creates_project(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            app = CaptureApp(archive)
+
+            project = app.create_project_from_form(
+                "name=R%C3%A4vfilosofi&description=Ett+projekt".encode("utf-8")
+            )
+
+            loaded = archive.get_project(project.id)
+            self.assertEqual(loaded.name, "Rävfilosofi")
+            self.assertEqual(loaded.description, "Ett projekt")
+
+    def test_project_form_updates_name_and_description(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Rävfilosofi")
+            app = CaptureApp(archive)
+
+            app.update_project_from_form(
+                project.id,
+                "name=Institutioner&description=Ny+beskrivning".encode("utf-8"),
+            )
+
+            loaded = archive.get_project(project.id)
+            self.assertEqual(loaded.name, "Institutioner")
+            self.assertEqual(loaded.description, "Ny beskrivning")
+
+    def test_render_project_shows_linked_notes_and_derived_documents(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Rävfilosofi")
+            document = archive.create_document("North")
+            archive.create_knowledge_object(
+                "Projektanteckning",
+                document_id=document.id,
+                project_ids=(project.id,),
+            )
+            archive.create_knowledge_object("Utanför projektet")
+            app = CaptureApp(archive)
+
+            html = app.render_project(project.id)
+
+            self.assertIn("Rävfilosofi", html)
+            self.assertIn("Projektanteckning", html)
+            self.assertIn("North", html)
+            self.assertNotIn("Utanför projektet</p><small>ID:", html)
+
+    def test_project_capture_suggests_project_but_can_be_removed(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Rävfilosofi")
+            app = CaptureApp(archive)
+
+            html = app.render_capture(project=project)
+            app.create_note_from_form("content=Utan+projekt".encode("utf-8"))
+            app.create_note_from_form(
+                f"content=Med+projekt&project_id={project.id}".encode("utf-8")
+            )
+
+            notes = archive.list_recent_knowledge_objects()
+            linked_notes = archive.list_knowledge_objects_for_project(project.id)
+            unlinked = [note for note in notes if note.content == "Utan projekt"][0]
+
+            self.assertIn("Aktuellt project", html)
+            self.assertIn('type="checkbox"', html)
+            self.assertIn("checked", html)
+            self.assertEqual(unlinked.project_ids, ())
+            self.assertEqual([note.content for note in linked_notes], ["Med projekt"])
+
+    def test_link_existing_note_to_project_from_form(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Rävfilosofi")
+            note = archive.create_knowledge_object("Befintlig notering")
+            app = CaptureApp(archive)
+
+            app.link_note_to_project_from_form(
+                project.id, f"object_id={note.id}".encode("utf-8")
+            )
+
+            linked = archive.list_knowledge_objects_for_project(project.id)
+            self.assertEqual([item.id for item in linked], [note.id])
+
+    def test_relation_form_creates_general_relation(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            first = archive.create_knowledge_object("North")
+            second = archive.create_knowledge_object("Boyd")
+            app = CaptureApp(archive)
+
+            app.create_relation_from_form(
+                (
+                    f"source_id={first.id}&target_id={second.id}"
+                    "&comment=Samma+tema"
+                ).encode("utf-8")
+            )
+
+            relation_files = list((Path(tmp) / "archive" / "relations").glob("*/relation.json"))
+            self.assertEqual(len(relation_files), 1)
+            loaded = archive.get_relation(relation_files[0].parent.name)
+            self.assertEqual(loaded.relation_type, "hör ihop med")
+            self.assertEqual(loaded.comment, "Samma tema")
+
 
 if __name__ == "__main__":
     unittest.main()
