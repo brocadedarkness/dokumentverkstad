@@ -10,6 +10,7 @@ import tomllib
 class AppConfig:
     archive_root: Path
     runtime_root: Path
+    ingest_source: Path
     host: str = "127.0.0.1"
     port: int = 8000
 
@@ -20,6 +21,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
 
     archive_root = Path(data.get("archive_root", ".dokumentverkstad/archive"))
     runtime_root = Path(data.get("runtime_root", ".dokumentverkstad/runtime"))
+    ingest_source = Path(data.get("ingest_source", ".dokumentverkstad/ingest"))
     host = str(data.get("host", "127.0.0.1"))
     port = int(data.get("port", 8000))
 
@@ -27,6 +29,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     return AppConfig(
         archive_root=_resolve_path(base, archive_root),
         runtime_root=_resolve_path(base, runtime_root),
+        ingest_source=_resolve_path(base, ingest_source),
         host=host,
         port=port,
     )

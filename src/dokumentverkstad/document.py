@@ -19,6 +19,9 @@ class Document:
     edition: str = ""
     comment: str = ""
     has_original_file: bool = False
+    original_filename: str = ""
+    checksum_sha256: str = ""
+    extracted_text_path: str = ""
 
     @classmethod
     def create(
@@ -30,6 +33,10 @@ class Document:
         language: str = "",
         edition: str = "",
         comment: str = "",
+        has_original_file: bool = False,
+        original_filename: str = "",
+        checksum_sha256: str = "",
+        extracted_text_path: str = "",
     ) -> "Document":
         clean_title = title.strip()
         if not clean_title:
@@ -45,6 +52,10 @@ class Document:
             language=language.strip(),
             edition=edition.strip(),
             comment=comment.strip(),
+            has_original_file=has_original_file,
+            original_filename=original_filename.strip(),
+            checksum_sha256=checksum_sha256.strip(),
+            extracted_text_path=extracted_text_path.strip(),
             created_at=now,
             updated_at=now,
         )
@@ -61,6 +72,9 @@ class Document:
             edition=str(data.get("edition", "")),
             comment=str(data.get("comment", "")),
             has_original_file=bool(data.get("has_original_file", False)),
+            original_filename=str(data.get("original_filename", "")),
+            checksum_sha256=str(data.get("checksum_sha256", "")),
+            extracted_text_path=str(data.get("extracted_text_path", "")),
             created_at=str(data["created_at"]),
             updated_at=str(data["updated_at"]),
         )
@@ -77,6 +91,9 @@ class Document:
             "edition": self.edition,
             "comment": self.comment,
             "has_original_file": self.has_original_file,
+            "original_filename": self.original_filename,
+            "checksum_sha256": self.checksum_sha256,
+            "extracted_text_path": self.extracted_text_path,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -107,6 +124,9 @@ class Document:
             edition=self.edition if edition is None else edition.strip(),
             comment=self.comment if comment is None else comment.strip(),
             has_original_file=self.has_original_file,
+            original_filename=self.original_filename,
+            checksum_sha256=self.checksum_sha256,
+            extracted_text_path=self.extracted_text_path,
             created_at=self.created_at,
             updated_at=utc_now(),
         )

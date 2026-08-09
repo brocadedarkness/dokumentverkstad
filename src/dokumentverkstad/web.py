@@ -3,6 +3,7 @@ from __future__ import annotations
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .archive import Archive
@@ -70,6 +71,12 @@ class CaptureApp:
     def render_document(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
         notes = self.archive.list_knowledge_objects_for_document(document.id)
+        original_file = (
+            f"<a href=\"/documents/{escape(document.id)}/original\">"
+            f"{escape(document.original_filename or 'original.pdf')}</a>"
+            if document.has_original_file
+            else "Ingen digital originalfil"
+        )
         return self._page(
             title=document.title,
             body=f"""
@@ -77,7 +84,7 @@ class CaptureApp:
     <h1>{escape(document.title)}</h1>
     <dl>
       <dt>Originalfil</dt>
-      <dd>Ingen digital originalfil</dd>
+      <dd>{original_file}</dd>
     </dl>
     <section aria-labelledby="document-capture">
       <h2 id="document-capture">Capture</h2>
@@ -431,7 +438,12 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 self._send_html(app.render_projects())
                 return
             if parsed.path.startswith("/documents/"):
-                document_id = unquote(parsed.path.removeprefix("/documents/"))
+                document_path = unquote(parsed.path.removeprefix("/documents/"))
+                if document_path.endswith("/original"):
+                    document_id = document_path.removesuffix("/original")
+                    self._send_pdf(app.archive.original_file_path(document_id))
+                    return
+                document_id = document_path
                 self._send_html(app.render_document(document_id))
                 return
             if parsed.path.startswith("/projects/"):
@@ -512,11 +524,22 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(encoded)
 
+        def _send_pdf(self, path: Path) -> None:
+            if not path.exists():
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            content = path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
     return Handler
 
 
-def main() -> None:
-    config = load_config()
+def main(config_path: str | None = None) -> None:
+    config = load_config(config_path)
     config.runtime_root.mkdir(parents=True, exist_ok=True)
     app = CaptureApp(Archive(config.archive_root))
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))

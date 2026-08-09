@@ -4,8 +4,9 @@ import unittest
 from pathlib import Path
 
 from dokumentverkstad.archive import Archive
+from dokumentverkstad.ingest import calculate_checksum
 from dokumentverkstad.web import CaptureApp
-from helpers import workspace_tempdir
+from helpers import workspace_tempdir, write_minimal_pdf
 
 
 class CaptureAppTests(unittest.TestCase):
@@ -88,6 +89,25 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Detta liknar North.", html)
             self.assertIn("kapitel 4", html)
             self.assertNotIn("Fristående notering.", html)
+
+    def test_render_pdf_document_links_to_original_file(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            archive = Archive(root / "archive")
+            pdf_path = root / "rapport.pdf"
+            write_minimal_pdf(pdf_path, title="Digital rapport")
+            document = archive.register_document_with_original_pdf(
+                original_path=pdf_path,
+                title="Digital rapport",
+                text="Extraherad text",
+                checksum_sha256=calculate_checksum(pdf_path),
+            )
+            app = CaptureApp(archive)
+
+            html = app.render_document(document.id)
+
+            self.assertIn(f"/documents/{document.id}/original", html)
+            self.assertIn("rapport.pdf", html)
 
     def test_document_context_capture_creates_linked_note_with_source(self) -> None:
         with workspace_tempdir() as tmp:

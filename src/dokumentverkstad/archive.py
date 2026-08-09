@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from .document import Document
@@ -44,6 +45,50 @@ class Archive:
         )
         self.save_document(document)
         return document
+
+    def register_document_with_original_pdf(
+        self,
+        original_path: str | Path,
+        title: str,
+        text: str,
+        checksum_sha256: str,
+        author: str = "",
+    ) -> Document:
+        existing = self.find_document_by_checksum(checksum_sha256)
+        if existing:
+            return existing
+
+        source = Path(original_path)
+        document = Document.create(
+            title=title,
+            author=author,
+            document_type="PDF",
+            has_original_file=True,
+            original_filename=source.name,
+            checksum_sha256=checksum_sha256,
+            extracted_text_path="processing/text.txt",
+        )
+        document_dir = self._document_path(document.id).parent
+        processing_dir = document_dir / "processing"
+        processing_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, document_dir / "original.pdf")
+        (processing_dir / "text.txt").write_text(text, encoding="utf-8")
+        self.save_document(document)
+        return document
+
+    def find_document_by_checksum(self, checksum_sha256: str) -> Document | None:
+        if not checksum_sha256:
+            return None
+        for document in self.list_documents():
+            if document.checksum_sha256 == checksum_sha256:
+                return document
+        return None
+
+    def original_file_path(self, document_id: str) -> Path:
+        return self._document_path(document_id).parent / "original.pdf"
+
+    def extracted_text_file_path(self, document_id: str) -> Path:
+        return self._document_path(document_id).parent / "processing" / "text.txt"
 
     def save_document(self, document: Document) -> None:
         self.initialize()

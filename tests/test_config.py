@@ -17,6 +17,7 @@ class ConfigTests(unittest.TestCase):
                     [
                         'archive_root = "archive"',
                         'runtime_root = "runtime"',
+                        'ingest_source = "incoming"',
                         'host = "0.0.0.0"',
                         "port = 8123",
                     ]
@@ -28,6 +29,7 @@ class ConfigTests(unittest.TestCase):
 
             self.assertEqual(config.archive_root, (Path(tmp) / "archive").resolve())
             self.assertEqual(config.runtime_root, (Path(tmp) / "runtime").resolve())
+            self.assertEqual(config.ingest_source, (Path(tmp) / "incoming").resolve())
             self.assertEqual(config.host, "0.0.0.0")
             self.assertEqual(config.port, 8123)
 
@@ -46,6 +48,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             config.runtime_root,
             (Path.cwd() / ".dokumentverkstad" / "runtime").resolve(),
+        )
+        self.assertEqual(
+            config.ingest_source,
+            (Path.cwd() / ".dokumentverkstad" / "ingest").resolve(),
         )
 
 
