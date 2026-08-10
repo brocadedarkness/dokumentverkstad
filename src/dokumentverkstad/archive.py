@@ -269,13 +269,17 @@ class Archive:
         self.save_knowledge_object(reviewed)
         return reviewed
 
-    def list_recent_knowledge_objects(self, limit: int = 10) -> list[KnowledgeObject]:
+    def list_knowledge_objects(self) -> list[KnowledgeObject]:
         self.initialize()
         objects = [
             self.get_knowledge_object(path.parent.name)
             for path in self.knowledge_root.glob("*/object.json")
         ]
         objects.sort(key=lambda item: item.created_at, reverse=True)
+        return objects
+
+    def list_recent_knowledge_objects(self, limit: int = 10) -> list[KnowledgeObject]:
+        objects = self.list_knowledge_objects()
         return objects[:limit]
 
     def list_ai_candidates_for_inbox(self) -> list[KnowledgeObject]:
@@ -412,14 +416,18 @@ class Archive:
         return AiRunRecord.from_dict(data)
 
     def list_ai_runs_for_document(self, document_id: str) -> list[AiRunRecord]:
+        filtered = [run for run in self.list_ai_runs() if run.document_id == document_id]
+        filtered.sort(key=lambda item: item.created_at, reverse=True)
+        return filtered
+
+    def list_ai_runs(self) -> list[AiRunRecord]:
         self.initialize()
         runs = [
             self.get_ai_run(path.parent.name)
             for path in self.ai_runs_root.glob("*/run.json")
         ]
-        filtered = [run for run in runs if run.document_id == document_id]
-        filtered.sort(key=lambda item: item.created_at, reverse=True)
-        return filtered
+        runs.sort(key=lambda item: item.created_at, reverse=True)
+        return runs
 
     def _document_path(self, document_id: str) -> Path:
         return self.documents_root / document_id / "metadata.json"

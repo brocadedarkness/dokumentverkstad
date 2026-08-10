@@ -29,6 +29,12 @@ from .document import Document
 from .knowledge import KnowledgeObject
 from .project import Project
 from .secrets import load_openai_api_key
+from .statistics import (
+    AiStatistics,
+    CandidateReviewSummary,
+    UsageSummary,
+    build_ai_statistics,
+)
 
 
 class CaptureApp:
@@ -101,6 +107,7 @@ class CaptureApp:
       {rendered_candidates}
     </section>
     <p><a href="/trash">Trash</a></p>
+    <p><a href="/admin">Administration</a></p>
 """,
         )
 
@@ -128,6 +135,45 @@ class CaptureApp:
       {rendered_documents}
     </ul>
     <p><a href="/inbox">Inbox</a></p>
+""",
+        )
+
+    def render_admin(self) -> str:
+        statistics = build_ai_statistics(self.archive)
+        empty_notice = (
+            "<p>Ingen AI-användning ännu.</p>"
+            if statistics.completed_runs == 0 and statistics.candidate_reviews.total == 0
+            else ""
+        )
+        return self._page(
+            title="Administration",
+            body=f"""
+    <h1>Administration</h1>
+    {empty_notice}
+    <section aria-labelledby="ai-totals">
+      <h2 id="ai-totals">AI-statistik</h2>
+      {self._render_ai_statistics_totals(statistics)}
+    </section>
+    <section aria-labelledby="ai-models">
+      <h2 id="ai-models">Per modell</h2>
+      {self._render_usage_summary_table(statistics.usage_by_model, "modell")}
+    </section>
+    <section aria-labelledby="ai-prompts">
+      <h2 id="ai-prompts">Per promptversion</h2>
+      {self._render_usage_summary_table(statistics.usage_by_prompt_version, "promptversion")}
+    </section>
+    <section aria-labelledby="ai-months">
+      <h2 id="ai-months">Per månad</h2>
+      {self._render_usage_summary_table(statistics.usage_by_month, "månad")}
+    </section>
+    <section aria-labelledby="ai-reviews">
+      <h2 id="ai-reviews">Review per kandidattyp</h2>
+      {self._render_candidate_review_table(statistics.review_by_candidate_type)}
+    </section>
+    <section aria-labelledby="ai-rejection-reasons">
+      <h2 id="ai-rejection-reasons">Avvisningsorsaker</h2>
+      {self._render_rejection_reasons(statistics.rejection_reasons)}
+    </section>
 """,
         )
 
@@ -1007,6 +1053,136 @@ class CaptureApp:
             return f"/documents/{document_id}#ai-review"
         return f"/documents/{document_id}#candidate-{candidates[0].id}"
 
+    def _render_ai_statistics_totals(self, statistics: AiStatistics) -> str:
+        reviews = statistics.candidate_reviews
+        rows = {
+            "Genomförda AI-körningar": str(statistics.completed_runs),
+            "Total kostnad": self._format_statistics_cost(statistics.total_usage.cost),
+            "Input-token": str(statistics.total_usage.input_tokens),
+            "Output-token": str(statistics.total_usage.output_tokens),
+            "AI-kandidater": str(reviews.total),
+            "Accepterade kandidater": str(reviews.accepted),
+            "Redigerade och accepterade kandidater": str(reviews.edited_accepted),
+            "Avvisade kandidater": str(reviews.rejected),
+            "Väntande kandidater": str(reviews.pending),
+            "Uppskjutna kandidater": str(reviews.later),
+            "Behandlade project suggestions": str(reviews.handled),
+        }
+        rendered_rows = "\n".join(
+            f"<tr><th scope=\"row\">{escape(label)}</th><td>{escape(value)}</td></tr>"
+            for label, value in rows.items()
+        )
+        return f"""
+      <table>
+        <tbody>
+          {rendered_rows}
+        </tbody>
+      </table>
+"""
+
+    def _render_usage_summary_table(
+        self, summaries: dict[str, UsageSummary], label: str
+    ) -> str:
+        if not summaries:
+            return "<p>Ingen användning ännu.</p>"
+        rows = "\n".join(
+            f"""
+          <tr>
+            <th scope="row">{escape(key)}</th>
+            <td>{summary.runs}</td>
+            <td>{summary.input_tokens}</td>
+            <td>{summary.output_tokens}</td>
+            <td>{self._format_statistics_cost(summary.cost)}</td>
+          </tr>
+"""
+            for key, summary in summaries.items()
+        )
+        return f"""
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">{escape(label.capitalize())}</th>
+            <th scope="col">Körningar</th>
+            <th scope="col">Input-token</th>
+            <th scope="col">Output-token</th>
+            <th scope="col">Kostnad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows}
+        </tbody>
+      </table>
+"""
+
+    def _render_candidate_review_table(
+        self, summaries: dict[str, CandidateReviewSummary]
+    ) -> str:
+        if not summaries:
+            return "<p>Inga AI-kandidater ännu.</p>"
+        rows = "\n".join(
+            f"""
+          <tr>
+            <th scope="row">{escape(candidate_type)}</th>
+            <td>{summary.total}</td>
+            <td>{summary.accepted}</td>
+            <td>{summary.edited_accepted}</td>
+            <td>{summary.rejected}</td>
+            <td>{summary.pending}</td>
+            <td>{summary.later}</td>
+            <td>{summary.handled}</td>
+          </tr>
+"""
+            for candidate_type, summary in summaries.items()
+        )
+        return f"""
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Typ</th>
+            <th scope="col">Totalt</th>
+            <th scope="col">Accepterade</th>
+            <th scope="col">Redigerade + accepterade</th>
+            <th scope="col">Avvisade</th>
+            <th scope="col">Väntande</th>
+            <th scope="col">Senare</th>
+            <th scope="col">Behandlade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows}
+        </tbody>
+      </table>
+"""
+
+    def _render_rejection_reasons(self, reasons: dict[str, int]) -> str:
+        if not reasons:
+            return "<p>Inga sparade avvisningsorsaker ännu.</p>"
+        rows = "\n".join(
+            f"""
+          <tr>
+            <th scope="row">{escape(reason)}</th>
+            <td>{count}</td>
+          </tr>
+"""
+            for reason, count in reasons.items()
+        )
+        return f"""
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Orsak</th>
+            <th scope="col">Antal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows}
+        </tbody>
+      </table>
+"""
+
+    def _format_statistics_cost(self, cost: float) -> str:
+        return f"{cost:.6f} USD"
+
     def _page(self, title: str, body: str) -> str:
         return f"""<!doctype html>
 <html lang="sv">
@@ -1115,6 +1291,9 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/trash":
                 self._send_html(app.render_trash())
+                return
+            if parsed.path == "/admin":
+                self._send_html(app.render_admin())
                 return
             if parsed.path.startswith("/documents/"):
                 document_path = unquote(parsed.path.removeprefix("/documents/"))

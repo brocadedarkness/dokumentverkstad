@@ -1,8 +1,8 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 6.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 7.
 
-Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, se väntande arbete i Inbox, fånga noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source och köra valfri AI-analys efter uttryckligt godkännande.
+Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, se väntande arbete i Inbox, fånga noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande och se enkel AI-/review-statistik.
 
 ## Starta Dokumentverkstad
 
@@ -364,6 +364,37 @@ Efter körningen sparas en AI-körning i Archive med:
 * kandidat-ID:n.
 
 Om AI-anropet misslyckas sparas ingen accepterad kunskap automatiskt. Dokumentet och tidigare Knowledge Objects påverkas inte.
+
+## Administration
+
+Öppna:
+
+```text
+/admin
+```
+
+Administrationsvyn är en enkel stödvy för AI- och review-statistik. Den är inte en ny primär arbetsyta.
+
+Vyn visar:
+
+* antal genomförda AI-körningar,
+* total faktisk AI-kostnad,
+* faktisk kostnad per modell,
+* input- och output-tokenanvändning,
+* användning per modell,
+* användning per promptversion,
+* användning per månad,
+* antal AI-kandidater per typ,
+* accepterade kandidater,
+* redigerade och accepterade kandidater,
+* avvisade kandidater,
+* väntande och uppskjutna kandidater,
+* behandlade Project Suggestions,
+* avvisningsorsaker när sådana har sparats.
+
+Statistiken beräknas från sparade AI-körningar och AI-kandidater i Archive. Runtime används inte som källa för statistiken och kan raderas utan att historiken går förlorad.
+
+Dokumentverkstad ändrar inte promptar, modeller eller review-flöden automatiskt utifrån statistiken. Informationen är endast ett underlag för användarens egen förståelse.
 
 ## Rebuild Index
 

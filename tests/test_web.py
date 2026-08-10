@@ -55,6 +55,7 @@ class CaptureAppTests(unittest.TestCase):
                 root_html = _get(server, "/")
                 documents_html = _get(server, "/documents")
                 projects_html = _get(server, "/projects")
+                admin_html = _get(server, "/admin")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -64,6 +65,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn('href="/projects"', root_html)
             self.assertIn("Inga dokument ännu.", documents_html)
             self.assertIn("Inga projekt ännu.", projects_html)
+            self.assertIn("Administration", admin_html)
             self.assertTrue((archive_root / "documents").is_dir())
             self.assertTrue((archive_root / "projects").is_dir())
             self.assertTrue((archive_root / "knowledge").is_dir())
