@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import re
 import zlib
 from pathlib import Path
+from typing import Iterator
 
 
 @dataclass(frozen=True)
@@ -32,9 +33,7 @@ def _metadata_value(decoded: str, name: str) -> str:
 
 def _extract_text(data: bytes, decoded: str) -> str:
     parts: list[str] = []
-    for match in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, re.DOTALL):
-        stream = match.group(1)
-        prefix = data[max(0, match.start() - 300) : match.start()]
+    for stream, prefix in _iter_streams(data):
         if b"/FlateDecode" in prefix:
             try:
                 stream = zlib.decompress(stream)
@@ -42,10 +41,33 @@ def _extract_text(data: bytes, decoded: str) -> str:
                 continue
         parts.extend(_strings_from_content(stream.decode("latin-1", errors="ignore")))
 
-    if not parts:
+    if not parts and len(decoded) <= 2_000_000:
         parts.extend(_strings_from_content(decoded))
 
     return "\n".join(part for part in parts if part).strip()
+
+
+def _iter_streams(data: bytes) -> Iterator[tuple[bytes, bytes]]:
+    position = 0
+    while True:
+        stream_marker = data.find(b"stream", position)
+        if stream_marker == -1:
+            return
+
+        start = stream_marker + len(b"stream")
+        if data[start : start + 2] == b"\r\n":
+            start += 2
+        elif data[start : start + 1] in (b"\n", b"\r"):
+            start += 1
+
+        end = data.find(b"endstream", start)
+        if end == -1:
+            return
+
+        stream = data[start:end].rstrip(b"\r\n")
+        prefix = data[max(0, stream_marker - 300) : stream_marker]
+        yield stream, prefix
+        position = end + len(b"endstream")
 
 
 def _strings_from_content(content: str) -> list[str]:
@@ -53,13 +75,23 @@ def _strings_from_content(content: str) -> list[str]:
         _decode_pdf_string(match.group(1))
         for match in re.finditer(r"\(((?:\\.|[^\\)])*)\)\s*Tj", content, re.DOTALL)
     ]
-    for array_match in re.finditer(r"\[(.*?)\]\s*TJ", content, re.DOTALL):
-        strings.append(
-            "".join(
-                _decode_pdf_string(match.group(1))
-                for match in re.finditer(r"\(((?:\\.|[^\\)])*)\)", array_match.group(1), re.DOTALL)
+    position = 0
+    while True:
+        operator_index = content.find("TJ", position)
+        if operator_index == -1:
+            break
+        array_start = content.rfind("[", 0, operator_index)
+        if array_start != -1:
+            array_content = content[array_start:operator_index]
+            strings.append(
+                "".join(
+                    _decode_pdf_string(match.group(1))
+                    for match in re.finditer(
+                        r"\(((?:\\.|[^\\)])*)\)", array_content, re.DOTALL
+                    )
+                )
             )
-        )
+        position = operator_index + 2
     return strings
 
 

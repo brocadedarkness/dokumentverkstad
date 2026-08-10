@@ -36,11 +36,16 @@ def main(argv: list[str] | None = None) -> None:
                 archive=archive,
                 ingest_source=config.ingest_source,
                 runtime_root=config.runtime_root,
+                log=print,
             )
             rebuild_document_index(archive, config.runtime_root)
             created = sum(1 for result in results if result.created)
-            duplicates = len(results) - created
-            print(f"Registrerade {created} PDF-dokument. Dubbletter: {duplicates}.")
+            failed = sum(1 for result in results if result.error)
+            duplicates = len(results) - created - failed
+            print(
+                f"Registrerade {created} PDF-dokument. "
+                f"Dubbletter: {duplicates}. Misslyckade: {failed}."
+            )
             return
 
         if command == "rebuild-index":

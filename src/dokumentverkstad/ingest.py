@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 import shutil
+from typing import Callable
 
 from .archive import Archive
 from .config import ensure_directory
@@ -13,13 +14,17 @@ from .pdf import extract_pdf
 
 @dataclass(frozen=True)
 class IngestResult:
-    document: Document
+    document: Document | None
     created: bool
     source_path: Path
+    error: str = ""
 
 
 def process_ingest_source(
-    archive: Archive, ingest_source: str | Path, runtime_root: str | Path
+    archive: Archive,
+    ingest_source: str | Path,
+    runtime_root: str | Path,
+    log: Callable[[str], None] | None = None,
 ) -> list[IngestResult]:
     source_root = ensure_directory(ingest_source, "ingest_source")
     runtime_root = ensure_directory(runtime_root, "runtime_root")
@@ -29,22 +34,38 @@ def process_ingest_source(
 
     results: list[IngestResult] = []
     for pdf_path in sorted(source_root.glob("*.pdf"), key=lambda item: item.name.casefold()):
-        staged_path = _stage_pdf(pdf_path, staging_root)
-        checksum = calculate_checksum(staged_path)
-        existing = archive.find_document_by_checksum(checksum)
-        if existing:
-            results.append(IngestResult(existing, created=False, source_path=pdf_path))
-            continue
+        _log(log, f"Behandlar PDF: {pdf_path}")
+        try:
+            _log(log, "  Steg: kopierar till runtime")
+            staged_path = _stage_pdf(pdf_path, staging_root)
 
-        extracted = extract_pdf(staged_path)
-        document = archive.register_document_with_original_pdf(
-            original_path=staged_path,
-            title=extracted.title or pdf_path.stem,
-            author=extracted.author,
-            text=extracted.text,
-            checksum_sha256=checksum,
-        )
-        results.append(IngestResult(document, created=True, source_path=pdf_path))
+            _log(log, "  Steg: beräknar checksumma")
+            checksum = calculate_checksum(staged_path)
+            existing = archive.find_document_by_checksum(checksum)
+            if existing:
+                _log(log, f"  Klar: dubblett, använder befintligt Document {existing.id}")
+                results.append(IngestResult(existing, created=False, source_path=pdf_path))
+                continue
+
+            _log(log, "  Steg: extraherar PDF-text")
+            extracted = extract_pdf(staged_path)
+
+            _log(log, "  Steg: arkiverar Document")
+            document = archive.register_document_with_original_pdf(
+                original_path=staged_path,
+                title=extracted.title or pdf_path.stem,
+                author=extracted.author,
+                text=extracted.text,
+                checksum_sha256=checksum,
+            )
+            _log(log, f"  Klar: skapade Document {document.id}")
+            results.append(IngestResult(document, created=True, source_path=pdf_path))
+        except Exception as error:
+            message = f"{type(error).__name__}: {error}"
+            _log(log, f"  Misslyckades: {message}")
+            results.append(
+                IngestResult(None, created=False, source_path=pdf_path, error=message)
+            )
     return results
 
 
@@ -60,3 +81,8 @@ def _stage_pdf(pdf_path: Path, staging_root: Path) -> Path:
     staged_path = staging_root / pdf_path.name
     shutil.copy2(pdf_path, staged_path)
     return staged_path
+
+
+def _log(log: Callable[[str], None] | None, message: str) -> None:
+    if log:
+        log(message)
