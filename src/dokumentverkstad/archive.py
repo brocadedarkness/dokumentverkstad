@@ -4,6 +4,7 @@ import json
 import shutil
 from pathlib import Path
 
+from .ai import AiRunRecord
 from .document import Document
 from .knowledge import KnowledgeObject
 from .project import Project
@@ -17,6 +18,7 @@ class Archive:
         self.knowledge_root = self.root / "knowledge"
         self.projects_root = self.root / "projects"
         self.relations_root = self.root / "relations"
+        self.ai_runs_root = self.root / "ai_runs"
         self.trash_root = self.root / "trash"
 
     def initialize(self) -> None:
@@ -24,6 +26,7 @@ class Archive:
         self.knowledge_root.mkdir(parents=True, exist_ok=True)
         self.projects_root.mkdir(parents=True, exist_ok=True)
         self.relations_root.mkdir(parents=True, exist_ok=True)
+        self.ai_runs_root.mkdir(parents=True, exist_ok=True)
         self.trash_root.mkdir(parents=True, exist_ok=True)
 
     def create_document(
@@ -202,6 +205,34 @@ class Archive:
         self.save_knowledge_object(knowledge_object)
         return knowledge_object
 
+    def create_ai_candidate(
+        self,
+        content: str,
+        ai_run_id: str,
+        ai_provider: str,
+        ai_model: str,
+        prompt_version: str,
+        capability: str,
+        document_id: str,
+        confidence: str = "",
+        project_ids: tuple[str, ...] = (),
+        semantic_type: str = "unknown",
+    ) -> KnowledgeObject:
+        candidate = KnowledgeObject.create_ai_candidate(
+            content=content,
+            ai_run_id=ai_run_id,
+            ai_provider=ai_provider,
+            ai_model=ai_model,
+            prompt_version=prompt_version,
+            capability=capability,
+            document_id=document_id,
+            confidence=confidence,
+            project_ids=project_ids,
+            semantic_type=semantic_type,
+        )
+        self.save_knowledge_object(candidate)
+        return candidate
+
     def save_knowledge_object(self, knowledge_object: KnowledgeObject) -> None:
         self.initialize()
         path = self._knowledge_path(knowledge_object.id)
@@ -222,6 +253,22 @@ class Archive:
         self.save_knowledge_object(revised)
         return revised
 
+    def review_knowledge_candidate(
+        self,
+        object_id: str,
+        review_status: str,
+        content: str | None = None,
+        rejection_reason: str = "",
+    ) -> KnowledgeObject:
+        knowledge_object = self.get_knowledge_object(object_id)
+        reviewed = knowledge_object.with_review_decision(
+            review_status=review_status,
+            content=content,
+            rejection_reason=rejection_reason,
+        )
+        self.save_knowledge_object(reviewed)
+        return reviewed
+
     def list_recent_knowledge_objects(self, limit: int = 10) -> list[KnowledgeObject]:
         self.initialize()
         objects = [
@@ -231,13 +278,22 @@ class Archive:
         objects.sort(key=lambda item: item.created_at, reverse=True)
         return objects[:limit]
 
+    def list_ai_candidates_for_inbox(self) -> list[KnowledgeObject]:
+        candidates = [
+            item
+            for item in self.list_recent_knowledge_objects(limit=10_000)
+            if item.creator == "ai" and item.review_status in {"candidate", "later"}
+        ]
+        candidates.sort(key=lambda item: item.updated_at, reverse=True)
+        return candidates
+
     def list_knowledge_objects_for_document(
         self, document_id: str
     ) -> list[KnowledgeObject]:
         objects = [
             item
             for item in self.list_recent_knowledge_objects(limit=10_000)
-            if item.document_id == document_id
+            if item.document_id == document_id and item.review_status == "accepted"
         ]
         objects.sort(key=lambda item: item.created_at, reverse=True)
         return objects
@@ -299,7 +355,7 @@ class Archive:
         objects = [
             item
             for item in self.list_recent_knowledge_objects(limit=10_000)
-            if project_id in item.project_ids
+            if project_id in item.project_ids and item.review_status == "accepted"
         ]
         objects.sort(key=lambda item: item.created_at, reverse=True)
         return objects
@@ -341,6 +397,30 @@ class Archive:
             data = json.load(handle)
         return Relation.from_dict(data)
 
+    def save_ai_run(self, run: AiRunRecord) -> None:
+        self.initialize()
+        path = self._ai_run_path(run.id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(run.to_dict(), handle, ensure_ascii=False, indent=2)
+            handle.write("\n")
+
+    def get_ai_run(self, run_id: str) -> AiRunRecord:
+        path = self._ai_run_path(run_id)
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return AiRunRecord.from_dict(data)
+
+    def list_ai_runs_for_document(self, document_id: str) -> list[AiRunRecord]:
+        self.initialize()
+        runs = [
+            self.get_ai_run(path.parent.name)
+            for path in self.ai_runs_root.glob("*/run.json")
+        ]
+        filtered = [run for run in runs if run.document_id == document_id]
+        filtered.sort(key=lambda item: item.created_at, reverse=True)
+        return filtered
+
     def _document_path(self, document_id: str) -> Path:
         return self.documents_root / document_id / "metadata.json"
 
@@ -352,3 +432,6 @@ class Archive:
 
     def _relation_path(self, relation_id: str) -> Path:
         return self.relations_root / relation_id / "relation.json"
+
+    def _ai_run_path(self, run_id: str) -> Path:
+        return self.ai_runs_root / run_id / "run.json"

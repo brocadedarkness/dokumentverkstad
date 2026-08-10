@@ -12,6 +12,9 @@ __pycache__/
 # User ingest
 .dokumentverkstad/ingest/
 
+# Local secrets
+.dokumentverkstad/secrets.toml
+
 # Eventuella loggar
 .dokumentverkstad/logs/
 

@@ -13,6 +13,12 @@ class AppConfig:
     ingest_source: Path
     host: str = "127.0.0.1"
     port: int = 8000
+    ai_provider: str = "openai"
+    ai_model: str = "gpt-5.6-luna"
+    ai_output_language: str = "sv"
+    ai_currency: str = "USD"
+    ai_cost_limit: float = 0.0
+    secrets_path: Path = Path(".dokumentverkstad/secrets.toml")
 
 
 class ConfigurationError(Exception):
@@ -28,6 +34,12 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     ingest_source = Path(data.get("ingest_source", ".dokumentverkstad/ingest"))
     host = str(data.get("host", "127.0.0.1"))
     port = int(data.get("port", 8000))
+    ai_provider = str(data.get("ai_provider", "openai"))
+    ai_model = str(data.get("ai_model", "gpt-5.6-luna"))
+    ai_output_language = str(data.get("ai_output_language", "sv"))
+    ai_currency = str(data.get("ai_currency", "USD"))
+    ai_cost_limit = float(data.get("ai_cost_limit", 0.0))
+    secrets_path = Path(data.get("secrets_path", ".dokumentverkstad/secrets.toml"))
 
     base = path.parent if path else Path.cwd()
     return AppConfig(
@@ -36,6 +48,12 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         ingest_source=_resolve_path(base, ingest_source),
         host=host,
         port=port,
+        ai_provider=ai_provider,
+        ai_model=ai_model,
+        ai_output_language=ai_output_language,
+        ai_currency=ai_currency,
+        ai_cost_limit=ai_cost_limit,
+        secrets_path=_resolve_path(base, secrets_path),
     )
 
 

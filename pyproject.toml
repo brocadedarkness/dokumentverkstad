@@ -3,6 +3,9 @@ name = "dokumentverkstad"
 version = "0.1.0"
 description = "Lokal-first arbetsyta for kumulativt kunskapsarbete."
 requires-python = ">=3.11"
+dependencies = [
+  "openai>=2.11.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

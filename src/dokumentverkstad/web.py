@@ -6,15 +6,48 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .ai import (
+    AI_CAPABILITIES,
+    DEFAULT_AI_MODEL,
+    DEFAULT_AI_PROVIDER,
+    DEFAULT_MAX_OUTPUT_TOKENS,
+    AiCost,
+    AiProvider,
+    AiProviderError,
+    AiRunRecord,
+    MissingCredentialError,
+    MockAiProvider,
+    OpenAiProvider,
+    PROMPT_VERSION,
+    estimate_cost,
+    estimate_input_tokens,
+    validate_document_size,
+)
 from .archive import Archive
-from .config import ensure_app_directories, load_config
+from .config import AppConfig, ensure_app_directories, load_config
 from .document import Document
+from .knowledge import KnowledgeObject
 from .project import Project
+from .secrets import load_openai_api_key
 
 
 class CaptureApp:
-    def __init__(self, archive: Archive):
+    def __init__(
+        self,
+        archive: Archive,
+        config: AppConfig | None = None,
+        ai_provider: AiProvider | None = None,
+    ):
         self.archive = archive
+        self.config = config
+        self.ai_provider_override = ai_provider
+        self.ai_provider_name = (
+            ai_provider.name if ai_provider else config.ai_provider if config else DEFAULT_AI_PROVIDER
+        )
+        self.ai_model = config.ai_model if config else DEFAULT_AI_MODEL
+        self.secrets_path = (
+            config.secrets_path if config else archive.root.parent / "secrets.toml"
+        )
         self.archive.initialize()
 
     def render_capture(
@@ -25,7 +58,7 @@ class CaptureApp:
             if document
             else self.archive.list_knowledge_objects_for_project(project.id)
             if project
-            else self.archive.list_recent_knowledge_objects()
+            else self._accepted_recent_notes()
         )
         return self._page(
             title="Capture",
@@ -43,19 +76,31 @@ class CaptureApp:
 
     def render_inbox(self) -> str:
         documents = self.archive.list_inbox_documents()
+        candidates = self.archive.list_ai_candidates_for_inbox()
         rendered_documents = "\n".join(
             self._render_inbox_document(document) for document in documents
         )
+        rendered_candidates = "\n".join(
+            self._render_ai_candidate(candidate) for candidate in candidates
+        )
+        empty_notice = "<p>Inbox är tom.</p>" if not documents and not candidates else ""
         if not rendered_documents:
-            rendered_documents = "<p>Inbox är tom.</p>"
+            rendered_documents = "<p>Inga väntande documents.</p>"
+        if not rendered_candidates:
+            rendered_candidates = "<p>Inga AI-kandidater väntar på review.</p>"
 
         return self._page(
             title="Inbox",
             body=f"""
     <h1>Inbox</h1>
+    {empty_notice}
     <section aria-labelledby="inbox-documents">
       <h2 id="inbox-documents">Väntande documents</h2>
       {rendered_documents}
+    </section>
+    <section aria-labelledby="inbox-candidates">
+      <h2 id="inbox-candidates">AI-kandidater</h2>
+      {rendered_candidates}
     </section>
     <p><a href="/trash">Trash</a></p>
 """,
@@ -118,6 +163,12 @@ class CaptureApp:
     def render_document(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
         notes = self.archive.list_knowledge_objects_for_document(document.id)
+        candidates = [
+            candidate
+            for candidate in self.archive.list_ai_candidates_for_inbox()
+            if candidate.document_id == document.id
+        ]
+        runs = self.archive.list_ai_runs_for_document(document.id)
         linked_projects = [
             project
             for project in self.archive.list_projects()
@@ -146,6 +197,7 @@ class CaptureApp:
       <dt>Projects</dt>
       <dd>{rendered_projects}</dd>
     </dl>
+    {self._render_document_ai_panel(document, candidates, runs)}
     <section aria-labelledby="document-capture">
       <h2 id="document-capture">Capture</h2>
       {self._render_capture_form(document=document, show_context=False)}
@@ -156,6 +208,63 @@ class CaptureApp:
         {self._render_notes(notes, "Inga kopplade noteringar ännu.")}
       </ul>
     </section>
+""",
+        )
+
+    def render_document_ai_confirmation(self, document_id: str) -> str:
+        document = self.archive.get_document(document_id)
+        try:
+            text = self._read_document_text(document)
+            estimate = self._estimate_document_ai_cost(text)
+            validate_document_size(estimate.input_tokens)
+        except AiProviderError as error:
+            return self.render_ai_message(document, str(error))
+
+        credential_note = ""
+        if self.ai_provider_name == "openai" and not load_openai_api_key(self.secrets_path):
+            credential_note = (
+                "<p>Ingen OpenAI API-nyckel är konfigurerad. "
+                "Lägg till OPENAI_API_KEY eller .dokumentverkstad/secrets.toml innan AI kan köras.</p>"
+            )
+
+        return self._page(
+            title="AI-analys",
+            body=f"""
+    <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
+    <h1>AI-analys</h1>
+    {credential_note}
+    <p>Dokumentets extraherade text skickas till extern AI-provider först när du startar analysen.</p>
+    <dl>
+      <dt>Document</dt>
+      <dd>{escape(document.title)}</dd>
+      <dt>Provider</dt>
+      <dd>{escape(self.ai_provider_name)}</dd>
+      <dt>Modell</dt>
+      <dd>{escape(self.ai_model)}</dd>
+      <dt>Capabilities</dt>
+      <dd>{escape(', '.join(AI_CAPABILITIES))}</dd>
+      <dt>Uppskattade input-token</dt>
+      <dd>{estimate.input_tokens}</dd>
+      <dt>Planerade max output-token</dt>
+      <dd>{estimate.output_tokens}</dd>
+      <dt>Uppskattad kostnad</dt>
+      <dd>{self._format_cost(estimate)}</dd>
+      <dt>Beräkningsmetod</dt>
+      <dd>Konservativ lokal uppskattning. Ingen dokumenttext skickas till AI-provider för estimatet.</dd>
+    </dl>
+    <form method="post" action="/documents/{escape(document.id)}/ai/run">
+      <button name="confirm_ai" type="submit" value="yes">Starta AI-analys</button>
+    </form>
+""",
+        )
+
+    def render_ai_message(self, document: Document, message: str) -> str:
+        return self._page(
+            title="AI-analys",
+            body=f"""
+    <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
+    <h1>AI-analys</h1>
+    <p>{escape(message)}</p>
 """,
         )
 
@@ -195,7 +304,7 @@ class CaptureApp:
         unlinked_notes = [
             note
             for note in self.archive.list_recent_knowledge_objects(limit=10_000)
-            if project.id not in note.project_ids
+            if project.id not in note.project_ids and note.review_status == "accepted"
         ]
         rendered_documents = "\n".join(
             f"<li><a href=\"/documents/{escape(document.id)}\">"
@@ -278,6 +387,77 @@ class CaptureApp:
             target_id=form.get("target_id", [""])[0],
             comment=form.get("comment", [""])[0],
         )
+
+    def review_ai_candidate_from_form(self, object_id: str, body: bytes) -> None:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        decision = form.get("decision", [""])[0]
+        content = form.get("content", [""])[0]
+        rejection_reason = form.get("rejection_reason", [""])[0]
+        if decision == "accept":
+            self.archive.review_knowledge_candidate(
+                object_id, "accepted", content=content
+            )
+        elif decision == "later":
+            self.archive.review_knowledge_candidate(object_id, "later")
+        elif decision == "reject":
+            self.archive.review_knowledge_candidate(
+                object_id, "rejected", rejection_reason=rejection_reason
+            )
+
+    def run_document_ai_analysis_from_form(
+        self, document_id: str, body: bytes
+    ) -> AiRunRecord:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        if form.get("confirm_ai", [""])[0] != "yes":
+            raise AiProviderError("AI-analys kräver uttryckligt godkännande.")
+
+        document = self.archive.get_document(document_id)
+        text = self._read_document_text(document)
+        estimate = self._estimate_document_ai_cost(text)
+        validate_document_size(estimate.input_tokens)
+        run = AiRunRecord.create(
+            document_id=document.id,
+            provider=self.ai_provider_name,
+            model=self.ai_model,
+            capabilities=AI_CAPABILITIES,
+            estimate=estimate,
+        )
+        self.archive.save_ai_run(run)
+
+        try:
+            provider = self._make_ai_provider()
+            projects = tuple(
+                (project.id, project.name) for project in self.archive.list_projects()
+            )
+            result = provider.analyze_document(
+                title=document.title,
+                text=text,
+                projects=projects,
+                model=self.ai_model,
+            )
+            candidate_ids = tuple(
+                self.archive.create_ai_candidate(
+                    content=candidate.content,
+                    ai_run_id=run.id,
+                    ai_provider=self.ai_provider_name,
+                    ai_model=self.ai_model,
+                    prompt_version=PROMPT_VERSION,
+                    capability=candidate.capability,
+                    document_id=document.id,
+                    confidence=candidate.confidence,
+                    semantic_type=self._semantic_type_for_capability(
+                        candidate.capability
+                    ),
+                ).id
+                for candidate in result.candidates
+            )
+            completed = run.completed(result.usage, candidate_ids)
+            self.archive.save_ai_run(completed)
+            return completed
+        except AiProviderError:
+            failed = run.failed("AI-körningen misslyckades.")
+            self.archive.save_ai_run(failed)
+            raise
 
     def update_inbox_document_from_form(self, document_id: str, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -407,6 +587,98 @@ class CaptureApp:
       </article>
 """
 
+    def _render_ai_candidate(self, candidate: KnowledgeObject) -> str:
+        rejection_options = "\n".join(
+            f"<option value=\"{escape(reason)}\">{escape(reason)}</option>"
+            for reason in (
+                "",
+                "irrelevant",
+                "trivial",
+                "felaktig",
+                "överdriven",
+                "redan känd",
+                "annat",
+            )
+        )
+        document_link = ""
+        if candidate.document_id:
+            document = self.archive.get_document(candidate.document_id)
+            document_link = (
+                f"<p>Källa: <a href=\"/documents/{escape(document.id)}\">"
+                f"{escape(document.title)}</a></p>"
+            )
+        confidence = (
+            f"<p>Confidence: {escape(candidate.confidence)}</p>"
+            if candidate.confidence
+            else ""
+        )
+        provenance = (
+            f"{escape(candidate.ai_provider)} / {escape(candidate.ai_model)} / "
+            f"{escape(candidate.prompt_version)}"
+        )
+        return f"""
+      <article>
+        <h3>{escape(candidate.semantic_type)}</h3>
+        {document_link}
+        <p>{escape(candidate.original_content or candidate.content)}</p>
+        {confidence}
+        <p>Proveniens: AI - {provenance}</p>
+        <form method="post" action="/inbox/candidates/{escape(candidate.id)}">
+          <label for="content-{escape(candidate.id)}">Formulering</label>
+          <textarea id="content-{escape(candidate.id)}" name="content">{escape(candidate.content)}</textarea>
+          <label for="reason-{escape(candidate.id)}">Avvisningsorsak</label>
+          <select id="reason-{escape(candidate.id)}" name="rejection_reason">
+            {rejection_options}
+          </select>
+          <button name="decision" type="submit" value="accept">Acceptera</button>
+          <button name="decision" type="submit" value="later">Senare</button>
+          <button name="decision" type="submit" value="reject">Avvisa</button>
+        </form>
+      </article>
+"""
+
+    def _render_document_ai_panel(
+        self,
+        document: Document,
+        candidates: list[KnowledgeObject],
+        runs: list[AiRunRecord],
+    ) -> str:
+        text_available = (
+            bool(document.extracted_text_path)
+            and self.archive.extracted_text_file_path(document.id).exists()
+        )
+        ai_action = (
+            f"<p><a href=\"/documents/{escape(document.id)}/ai\">Förbered AI-analys</a></p>"
+            if text_available
+            else "<p>AI-analys kräver extraherad dokumenttext.</p>"
+        )
+        rendered_candidates = "\n".join(
+            f"<li>{escape(candidate.semantic_type)}: {escape(candidate.content)}</li>"
+            for candidate in candidates
+        )
+        if not rendered_candidates:
+            rendered_candidates = "<li>Inga väntande AI-kandidater för dokumentet.</li>"
+        rendered_runs = "\n".join(
+            (
+                f"<li>{escape(run.status)} - {escape(run.model)} - "
+                f"{run.actual_input_tokens}/{run.actual_output_tokens} token - "
+                f"{run.actual_cost:.6f} {escape(run.currency)}</li>"
+            )
+            for run in runs
+        )
+        if not rendered_runs:
+            rendered_runs = "<li>Ingen AI-körning ännu.</li>"
+        return f"""
+    <section aria-labelledby="document-ai">
+      <h2 id="document-ai">AI</h2>
+      {ai_action}
+      <h3>Väntande kandidater</h3>
+      <ul>{rendered_candidates}</ul>
+      <h3>AI-körningar</h3>
+      <ul>{rendered_runs}</ul>
+    </section>
+"""
+
     def _render_relation_form(self, notes: list[object]) -> str:
         options = "\n".join(
             f"<option value=\"{escape(note.id)}\">{escape(note.content)}</option>"
@@ -447,6 +719,57 @@ class CaptureApp:
         if source_location:
             source = f"<small>Källa: {escape(source_location)}</small>"
         return f"<li><p>{escape(content)}</p><small>ID: {escape(note_id)}</small>{source}</li>"
+
+    def _accepted_recent_notes(self) -> list[KnowledgeObject]:
+        return [
+            note
+            for note in self.archive.list_recent_knowledge_objects()
+            if note.review_status == "accepted"
+        ]
+
+    def _read_document_text(self, document: Document) -> str:
+        if not document.extracted_text_path:
+            raise AiProviderError(
+                "Dokumentet saknar extraherad text och kan inte AI-analyseras."
+            )
+        text_path = self.archive.extracted_text_file_path(document.id)
+        if not text_path.exists():
+            raise AiProviderError("Dokumentets extraherade text saknas i Archive.")
+        text = text_path.read_text(encoding="utf-8").strip()
+        if not text:
+            raise AiProviderError("Dokumentets extraherade text är tom.")
+        return text
+
+    def _estimate_document_ai_cost(self, text: str) -> AiCost:
+        input_tokens = estimate_input_tokens(text)
+        return estimate_cost(
+            input_tokens=input_tokens,
+            output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            model=self.ai_model,
+        )
+
+    def _make_ai_provider(self) -> AiProvider:
+        if self.ai_provider_override:
+            return self.ai_provider_override
+        if self.ai_provider_name == "mock":
+            return MockAiProvider()
+        if self.ai_provider_name == "openai":
+            return OpenAiProvider(load_openai_api_key(self.secrets_path))
+        raise MissingCredentialError("Ingen känd AI-provider är konfigurerad.")
+
+    def _semantic_type_for_capability(self, capability: str) -> str:
+        return {
+            "summary": "Summary",
+            "candidate_insight": "Insight",
+            "candidate_claim": "Claim",
+            "candidate_question": "Question",
+            "project_suggestion": "ProjectSuggestion",
+        }.get(capability, "unknown")
+
+    def _format_cost(self, cost: AiCost) -> str:
+        if cost.method == "unknown_model_price":
+            return "Kan inte beräknas tillförlitligt för vald modell."
+        return f"{cost.estimated_cost:.6f} {escape(cost.currency)}"
 
     def _page(self, title: str, body: str) -> str:
         return f"""<!doctype html>
@@ -563,6 +886,10 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     document_id = document_path.removesuffix("/original")
                     self._send_pdf(app.archive.original_file_path(document_id))
                     return
+                if document_path.endswith("/ai"):
+                    document_id = document_path.removesuffix("/ai")
+                    self._send_html(app.render_document_ai_confirmation(document_id))
+                    return
                 document_id = document_path
                 self._send_html(app.render_document(document_id))
                 return
@@ -601,6 +928,28 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path.startswith("/inbox/documents/"):
                 document_id = unquote(parsed.path.removeprefix("/inbox/documents/"))
                 app.update_inbox_document_from_form(document_id, body)
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", "/inbox")
+                self.end_headers()
+                return
+
+            if parsed.path.startswith("/inbox/candidates/"):
+                object_id = unquote(parsed.path.removeprefix("/inbox/candidates/"))
+                app.review_ai_candidate_from_form(object_id, body)
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", f"/documents/{document_id}")
+                self.end_headers()
+                return
+
+            if parsed.path.startswith("/documents/") and parsed.path.endswith("/ai/run"):
+                document_path = unquote(parsed.path.removeprefix("/documents/"))
+                document_id = document_path.removesuffix("/ai/run")
+                try:
+                    app.run_document_ai_analysis_from_form(document_id, body)
+                except AiProviderError as error:
+                    document = app.archive.get_document(document_id)
+                    self._send_html(app.render_ai_message(document, str(error)))
+                    return
                 self.send_response(HTTPStatus.SEE_OTHER)
                 self.send_header("Location", "/inbox")
                 self.end_headers()
@@ -678,7 +1027,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
 def main(config_path: str | None = None) -> None:
     config = load_config(config_path)
     ensure_app_directories(config)
-    app = CaptureApp(Archive(config.archive_root))
+    app = CaptureApp(Archive(config.archive_root), config=config)
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
     print(f"Dokumentverkstad Capture körs på http://{config.host}:{config.port}/")
     server.serve_forever()

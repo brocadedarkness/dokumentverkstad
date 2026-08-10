@@ -26,6 +26,9 @@ class ConfigTests(unittest.TestCase):
                         'ingest_source = "incoming"',
                         'host = "0.0.0.0"',
                         "port = 8123",
+                        'ai_provider = "mock"',
+                        'ai_model = "test-model"',
+                        'secrets_path = "local-secrets.toml"',
                     ]
                 ),
                 encoding="utf-8",
@@ -38,6 +41,11 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.ingest_source, (Path(tmp) / "incoming").resolve())
             self.assertEqual(config.host, "0.0.0.0")
             self.assertEqual(config.port, 8123)
+            self.assertEqual(config.ai_provider, "mock")
+            self.assertEqual(config.ai_model, "test-model")
+            self.assertEqual(
+                config.secrets_path, (Path(tmp) / "local-secrets.toml").resolve()
+            )
 
     def test_loads_config_file_with_utf8_bom(self) -> None:
         with workspace_tempdir() as tmp:
