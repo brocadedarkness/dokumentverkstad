@@ -51,6 +51,9 @@ class CaptureApp:
             ai_provider.name if ai_provider else config.ai_provider if config else DEFAULT_AI_PROVIDER
         )
         self.ai_model = config.ai_model if config else DEFAULT_AI_MODEL
+        self.ai_max_output_tokens = (
+            config.ai_max_output_tokens if config else DEFAULT_MAX_OUTPUT_TOKENS
+        )
         self.secrets_path = (
             config.secrets_path if config else archive.root.parent / "secrets.toml"
         )
@@ -496,6 +499,7 @@ class CaptureApp:
                 text=text,
                 projects=projects,
                 model=self.ai_model,
+                max_output_tokens=self.ai_max_output_tokens,
             )
             candidate_ids = tuple(
                 self.archive.create_ai_candidate(
@@ -1011,7 +1015,7 @@ class CaptureApp:
         input_tokens = estimate_input_tokens(text)
         return estimate_cost(
             input_tokens=input_tokens,
-            output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+            output_tokens=self.ai_max_output_tokens,
             model=self.ai_model,
         )
 

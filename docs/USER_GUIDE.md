@@ -49,6 +49,7 @@ host = "127.0.0.1"
 port = 8000
 ai_provider = "openai"
 ai_model = "gpt-5.6-luna"
+ai_max_output_tokens = 6000
 ai_output_language = "sv"
 ai_currency = "USD"
 ai_cost_limit = 0
@@ -284,6 +285,7 @@ Första AI-providern är OpenAI. Provider och modell styrs av konfiguration:
 ```toml
 ai_provider = "openai"
 ai_model = "gpt-5.6-luna"
+ai_max_output_tokens = 6000
 ```
 
 API-nyckeln söks i denna ordning:
@@ -320,7 +322,7 @@ Bekräftelsesidan visar:
 * modell,
 * capabilities,
 * uppskattade input-token,
-* planerade max output-token,
+* planerade max output-token enligt `ai_max_output_tokens`,
 * uppskattad kostnad.
 
 Uppskattningen görs lokalt med en konservativ teckenbaserad tokenuppskattning. Dokumenttext skickas inte till OpenAI för kostnadsestimatet.

@@ -14,6 +14,7 @@ from dokumentverkstad.ai import (
     AiProviderError,
     AiUsage,
     AI_CAPABILITIES,
+    DEFAULT_MAX_OUTPUT_TOKENS,
     LONG_CONTEXT_INPUT_TOKEN_THRESHOLD,
     InvalidAiResultError,
     MockAiProvider,
@@ -23,6 +24,7 @@ from dokumentverkstad.ai import (
     estimate_input_tokens,
 )
 from dokumentverkstad.archive import Archive
+from dokumentverkstad.config import AppConfig
 from dokumentverkstad.ingest import calculate_checksum
 from dokumentverkstad.secrets import load_openai_api_key
 from dokumentverkstad.web import CaptureApp
@@ -38,6 +40,7 @@ class FailingAiProvider(AiProvider):
         text: str,
         projects: tuple[tuple[str, str], ...],
         model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> AiAnalysisResult:
         raise AiProviderError("simulerat AI-fel")
 
@@ -51,6 +54,7 @@ class InvalidStructuredAiProvider(AiProvider):
         text: str,
         projects: tuple[tuple[str, str], ...],
         model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> AiAnalysisResult:
         return _analysis_result_from_openai_response(
             SimpleNamespace(
@@ -74,9 +78,31 @@ class ProjectSuggestionProvider(AiProvider):
         text: str,
         projects: tuple[tuple[str, str], ...],
         model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> AiAnalysisResult:
         return AiAnalysisResult(
             candidates=(self.suggestion,),
+            usage=AiUsage(input_tokens=10, output_tokens=10),
+        )
+
+
+class RecordingAiProvider(AiProvider):
+    name = "mock"
+
+    def __init__(self) -> None:
+        self.max_output_tokens = 0
+
+    def analyze_document(
+        self,
+        title: str,
+        text: str,
+        projects: tuple[tuple[str, str], ...],
+        model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    ) -> AiAnalysisResult:
+        self.max_output_tokens = max_output_tokens
+        return AiAnalysisResult(
+            candidates=(AiCandidate("summary", "Sammanfattning", "medel"),),
             usage=AiUsage(input_tokens=10, output_tokens=10),
         )
 
@@ -256,6 +282,49 @@ class AiTests(unittest.TestCase):
         self.assertEqual(
             estimate.method, "estimated_tokens_x_configured_price_short_context"
         )
+
+    def test_default_max_output_tokens_is_used_in_cost_estimate(self) -> None:
+        estimate = estimate_cost(input_tokens=100)
+
+        self.assertEqual(DEFAULT_MAX_OUTPUT_TOKENS, 6000)
+        self.assertEqual(estimate.output_tokens, 6000)
+
+    def test_configured_max_output_tokens_is_used_for_estimate_run_and_provider(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            archive, document = _archive_with_pdf_document(root)
+            provider = RecordingAiProvider()
+            app = CaptureApp(
+                archive,
+                config=AppConfig(
+                    archive_root=root / "archive",
+                    runtime_root=root / "runtime",
+                    ingest_source=root / "ingest",
+                    ai_provider="mock",
+                    ai_max_output_tokens=4321,
+                ),
+                ai_provider=provider,
+            )
+
+            estimate_html = app.render_document_ai_confirmation(document.id)
+            run = app.run_document_ai_analysis_from_form(
+                document.id, b"confirm_ai=yes"
+            )
+
+            self.assertIn("<dd>4321</dd>", estimate_html)
+            self.assertEqual(run.estimated_output_tokens, 4321)
+            self.assertEqual(
+                run.estimated_cost,
+                estimate_cost(
+                    estimate_input_tokens(
+                        archive.extracted_text_file_path(document.id).read_text(
+                            encoding="utf-8"
+                        )
+                    ),
+                    output_tokens=4321,
+                ).estimated_cost,
+            )
+            self.assertEqual(provider.max_output_tokens, 4321)
 
     def test_cost_estimate_uses_long_context_prices_above_threshold(self) -> None:
         estimate = estimate_cost(

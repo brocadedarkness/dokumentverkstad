@@ -11,7 +11,7 @@ from .knowledge import utc_now
 PROMPT_VERSION = "document-analysis-v1"
 DEFAULT_AI_PROVIDER = "openai"
 DEFAULT_AI_MODEL = "gpt-5.6-luna"
-DEFAULT_MAX_OUTPUT_TOKENS = 2000
+DEFAULT_MAX_OUTPUT_TOKENS = 6000
 MAX_INPUT_TOKENS = 1_000_000
 LONG_CONTEXT_INPUT_TOKEN_THRESHOLD = 272_000
 AI_CAPABILITIES = (
@@ -230,6 +230,7 @@ class AiProvider:
         text: str,
         projects: tuple[tuple[str, str], ...],
         model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> AiAnalysisResult:
         raise NotImplementedError
 
@@ -243,6 +244,7 @@ class MockAiProvider(AiProvider):
         text: str,
         projects: tuple[tuple[str, str], ...],
         model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> AiAnalysisResult:
         first_project = projects[0] if projects else ("", "")
         candidates = [
@@ -293,6 +295,7 @@ class OpenAiProvider(AiProvider):
         text: str,
         projects: tuple[tuple[str, str], ...],
         model: str,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     ) -> AiAnalysisResult:
         try:
             from openai import OpenAI
@@ -306,7 +309,7 @@ class OpenAiProvider(AiProvider):
             response = client.responses.create(
                 model=model,
                 input=_analysis_input(title, text, projects),
-                max_output_tokens=DEFAULT_MAX_OUTPUT_TOKENS,
+                max_output_tokens=max_output_tokens,
                 store=False,
                 text={"format": _response_format_schema()},
             )

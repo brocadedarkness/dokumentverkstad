@@ -28,6 +28,7 @@ class ConfigTests(unittest.TestCase):
                         "port = 8123",
                         'ai_provider = "mock"',
                         'ai_model = "test-model"',
+                        "ai_max_output_tokens = 4321",
                         'secrets_path = "local-secrets.toml"',
                     ]
                 ),
@@ -43,6 +44,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.port, 8123)
             self.assertEqual(config.ai_provider, "mock")
             self.assertEqual(config.ai_model, "test-model")
+            self.assertEqual(config.ai_max_output_tokens, 4321)
             self.assertEqual(
                 config.secrets_path, (Path(tmp) / "local-secrets.toml").resolve()
             )
