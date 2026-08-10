@@ -33,6 +33,7 @@ class IngestTests(unittest.TestCase):
             self.assertEqual(len(results), 1)
             self.assertTrue(results[0].created)
             document = results[0].document
+            self.assertIsNotNone(document)
             self.assertEqual(document.title, "Rapport om institutioner")
             self.assertEqual(document.author, "North")
             self.assertEqual(document.document_type, "PDF")
@@ -49,6 +50,8 @@ class IngestTests(unittest.TestCase):
                 [item.id for item in archive.list_inbox_documents()],
                 [document.id],
             )
+            self.assertFalse((ingest_source / "rapport.pdf").exists())
+            self.assertTrue(results[0].processed_path.exists())
 
     def test_duplicate_pdf_does_not_create_second_document(self) -> None:
         with workspace_tempdir() as tmp:
@@ -59,12 +62,15 @@ class IngestTests(unittest.TestCase):
             archive = Archive(root / "archive")
 
             first_results = process_ingest_source(archive, ingest_source, root / "runtime")
+            write_minimal_pdf(ingest_source / "rapport.pdf")
             second_results = process_ingest_source(archive, ingest_source, root / "runtime")
 
             self.assertTrue(first_results[0].created)
             self.assertFalse(second_results[0].created)
             self.assertEqual(len(archive.list_documents()), 1)
             self.assertEqual(first_results[0].document.id, second_results[0].document.id)
+            self.assertFalse((ingest_source / "rapport.pdf").exists())
+            self.assertTrue(second_results[0].processed_path.exists())
 
     def test_multiple_pdfs_are_registered_in_one_ingest_pass(self) -> None:
         with workspace_tempdir() as tmp:
@@ -94,6 +100,8 @@ class IngestTests(unittest.TestCase):
                 [document.title for document in archive.list_documents()],
                 ["Andra PDF", "Första PDF"],
             )
+            self.assertEqual(list(ingest_source.glob("*.pdf")), [])
+            self.assertTrue(all(result.processed_path.exists() for result in results))
             self.assertTrue(any("Behandlar PDF:" in message for message in messages))
             self.assertTrue(any("Steg: extraherar PDF-text" in message for message in messages))
             self.assertTrue(any("Klar: skapade Document" in message for message in messages))
@@ -130,6 +138,8 @@ class IngestTests(unittest.TestCase):
             self.assertFalse(results[0].created)
             self.assertTrue(results[1].created)
             self.assertEqual(archive.list_documents()[0].title, "Efterföljande PDF")
+            self.assertTrue((ingest_source / "bad.pdf").exists())
+            self.assertFalse((ingest_source / "good.pdf").exists())
             self.assertTrue(any("Misslyckades: ValueError: test failure" in message for message in messages))
 
     def test_index_can_be_rebuilt_from_archive(self) -> None:

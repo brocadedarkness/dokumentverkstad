@@ -88,6 +88,26 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Nytt dokument", html)
             self.assertIn(f"/documents/{document.id}", html)
 
+    def test_inbox_document_shows_original_filename_when_available(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            archive = Archive(root / "archive")
+            pdf_path = root / "rapport.pdf"
+            write_minimal_pdf(pdf_path, title="Svår metadata")
+            document = archive.register_document_with_original_pdf(
+                original_path=pdf_path,
+                title="Svår metadata",
+                text="Extraherad text",
+                checksum_sha256=calculate_checksum(pdf_path),
+            )
+            app = CaptureApp(archive)
+
+            html = app.render_inbox()
+
+            self.assertIn("Svår metadata", html)
+            self.assertIn("Originalfil: rapport.pdf", html)
+            self.assertIn(f"/documents/{document.id}", html)
+
     def test_inbox_document_can_be_linked_to_multiple_projects_and_marked_done(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -210,7 +230,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Andens fenomenologi", html)
             self.assertIn('action="/documents"', html)
 
-    def test_render_document_shows_capture_context_and_linked_notes(self) -> None:
+    def test_render_document_shows_capture_form_without_redundant_self_context(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
             document = archive.create_document("Andens fenomenologi")
@@ -225,12 +245,13 @@ class CaptureAppTests(unittest.TestCase):
             html = app.render_document(document.id)
 
             self.assertIn("Andens fenomenologi", html)
-            self.assertIn("Aktuellt dokument", html)
             self.assertIn(f'value="{document.id}"', html)
             self.assertIn("Källposition", html)
             self.assertIn("Detta liknar North.", html)
             self.assertIn("kapitel 4", html)
             self.assertNotIn("Fristående notering.", html)
+            self.assertNotIn("Aktuellt dokument", html)
+            self.assertNotIn("Inbox-status", html)
 
     def test_render_pdf_document_links_to_original_file(self) -> None:
         with workspace_tempdir() as tmp:

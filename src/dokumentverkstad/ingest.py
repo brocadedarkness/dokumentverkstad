@@ -18,6 +18,7 @@ class IngestResult:
     created: bool
     source_path: Path
     error: str = ""
+    processed_path: Path | None = None
 
 
 def process_ingest_source(
@@ -43,8 +44,18 @@ def process_ingest_source(
             checksum = calculate_checksum(staged_path)
             existing = archive.find_document_by_checksum(checksum)
             if existing:
+                processed_path = _move_processed_pdf(
+                    pdf_path, runtime_root / "ingest" / "processed"
+                )
                 _log(log, f"  Klar: dubblett, använder befintligt Document {existing.id}")
-                results.append(IngestResult(existing, created=False, source_path=pdf_path))
+                results.append(
+                    IngestResult(
+                        existing,
+                        created=False,
+                        source_path=pdf_path,
+                        processed_path=processed_path,
+                    )
+                )
                 continue
 
             _log(log, "  Steg: extraherar PDF-text")
@@ -58,8 +69,16 @@ def process_ingest_source(
                 text=extracted.text,
                 checksum_sha256=checksum,
             )
+            processed_path = _move_processed_pdf(pdf_path, runtime_root / "ingest" / "processed")
             _log(log, f"  Klar: skapade Document {document.id}")
-            results.append(IngestResult(document, created=True, source_path=pdf_path))
+            results.append(
+                IngestResult(
+                    document,
+                    created=True,
+                    source_path=pdf_path,
+                    processed_path=processed_path,
+                )
+            )
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             _log(log, f"  Misslyckades: {message}")
@@ -81,6 +100,24 @@ def _stage_pdf(pdf_path: Path, staging_root: Path) -> Path:
     staged_path = staging_root / pdf_path.name
     shutil.copy2(pdf_path, staged_path)
     return staged_path
+
+
+def _move_processed_pdf(pdf_path: Path, processed_root: Path) -> Path:
+    processed_root.mkdir(parents=True, exist_ok=True)
+    processed_path = processed_root / pdf_path.name
+    if processed_path.exists():
+        processed_path = _unique_processed_path(processed_path)
+    shutil.move(str(pdf_path), str(processed_path))
+    return processed_path
+
+
+def _unique_processed_path(path: Path) -> Path:
+    counter = 1
+    while True:
+        candidate = path.with_name(f"{path.stem}-{counter}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
 
 
 def _log(log: Callable[[str], None] | None, message: str) -> None:

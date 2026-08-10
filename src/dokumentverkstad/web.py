@@ -145,12 +145,10 @@ class CaptureApp:
       <dd>{original_file}</dd>
       <dt>Projects</dt>
       <dd>{rendered_projects}</dd>
-      <dt>Inbox-status</dt>
-      <dd>{escape(document.inbox_status)}</dd>
     </dl>
     <section aria-labelledby="document-capture">
       <h2 id="document-capture">Capture</h2>
-      {self._render_capture_form(document=document)}
+      {self._render_capture_form(document=document, show_context=False)}
     </section>
     <section aria-labelledby="document-notes">
       <h2 id="document-notes">Kopplade noteringar</h2>
@@ -303,7 +301,10 @@ class CaptureApp:
         )
 
     def _render_capture_form(
-        self, document: Document | None = None, project: Project | None = None
+        self,
+        document: Document | None = None,
+        project: Project | None = None,
+        show_context: bool = True,
     ) -> str:
         action = "/capture"
         context = ""
@@ -315,22 +316,24 @@ class CaptureApp:
             hidden_document = (
                 f"<input name=\"document_id\" type=\"hidden\" value=\"{escape(document.id)}\">"
             )
-            context = (
-                "<p>Aktuellt dokument: "
-                f"<a href=\"/documents/{escape(document.id)}\">"
-                f"{escape(document.title)}</a></p>"
-            )
+            if show_context:
+                context = (
+                    "<p>Aktuellt dokument: "
+                    f"<a href=\"/documents/{escape(document.id)}\">"
+                    f"{escape(document.title)}</a></p>"
+                )
             source_location = """
       <label for="source_location">Källposition</label>
       <input id="source_location" name="source_location" type="text" placeholder="s. 35 eller kapitel 4">
 """
         if project:
             action = f"/capture?project_id={escape(project.id)}"
-            context = (
-                "<p>Aktuellt project: "
-                f"<a href=\"/projects/{escape(project.id)}\">"
-                f"{escape(project.name)}</a></p>"
-            )
+            if show_context:
+                context = (
+                    "<p>Aktuellt project: "
+                    f"<a href=\"/projects/{escape(project.id)}\">"
+                    f"{escape(project.name)}</a></p>"
+                )
             project_choice = (
                 "<label>"
                 f"<input name=\"project_id\" type=\"checkbox\" value=\"{escape(project.id)}\" checked>"
@@ -381,10 +384,16 @@ class CaptureApp:
         )
         if not project_options:
             project_options = "<p>Inga projects finns ännu.</p>"
+        original_filename = (
+            f"<p>Originalfil: {escape(document.original_filename)}</p>"
+            if document.original_filename
+            else ""
+        )
 
         return f"""
       <article>
         <h3><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></h3>
+        {original_filename}
         <p>Status: {escape(document.inbox_status)}</p>
         <form method="post" action="/inbox/documents/{escape(document.id)}">
           <fieldset>
