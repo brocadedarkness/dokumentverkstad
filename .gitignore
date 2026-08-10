@@ -18,8 +18,9 @@ __pycache__/
 # Eventuella loggar
 .dokumentverkstad/logs/
 
-# Lokala testfiler
+# Lokala filer
 /test_tmp/
+src/dokumentverkstad.egg-info/
 
 # Lokala konfigurationsfiler (om de innehåller API-nycklar)
 .env
