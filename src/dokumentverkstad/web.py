@@ -812,7 +812,7 @@ class CaptureApp:
             f"{escape(candidate.prompt_version)}"
         )
         return f"""
-      <article data-ai-review-candidate-id="{escape(candidate.id)}">
+      <article id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
         <h3>{escape(candidate.semantic_type)}</h3>
         {document_link}
         <p>{escape(candidate.original_content or candidate.content)}</p>
@@ -848,7 +848,7 @@ class CaptureApp:
             f"{escape(candidate.prompt_version)}"
         )
         return f"""
-      <article data-ai-review-candidate-id="{escape(candidate.id)}">
+      <article id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
         <h3>{escape(candidate.semantic_type)}</h3>
         <p>Föreslaget project: {escape(project_name)}</p>
         <p>{escape(candidate.original_content or candidate.content)}</p>
@@ -890,7 +890,7 @@ class CaptureApp:
         if not rendered_runs:
             rendered_runs = "<li>Ingen AI-körning ännu.</li>"
         return f"""
-    <section aria-labelledby="document-ai">
+    <section id="ai-review" aria-labelledby="document-ai">
       <h2 id="document-ai">AI</h2>
       {ai_action}
       <h3>Väntande kandidater</h3>
@@ -991,6 +991,21 @@ class CaptureApp:
         if cost.method == "unknown_model_price":
             return "Kan inte beräknas tillförlitligt för vald modell."
         return f"{cost.estimated_cost:.6f} {escape(cost.currency)}"
+
+    def _ai_review_redirect_location(
+        self, document_id: str, reviewed_candidate_id: str = ""
+    ) -> str:
+        document = self.archive.get_document(document_id)
+        candidates = [
+            candidate
+            for candidate in self._sort_ai_candidates_for_review(
+                self._visible_ai_candidates_for_document(document)
+            )
+            if candidate.id != reviewed_candidate_id
+        ]
+        if not candidates:
+            return f"/documents/{document_id}#ai-review"
+        return f"/documents/{document_id}#candidate-{candidates[0].id}"
 
     def _page(self, title: str, body: str) -> str:
         return f"""<!doctype html>
@@ -1164,7 +1179,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 self.send_response(HTTPStatus.SEE_OTHER)
                 self.send_header(
                     "Location",
-                    f"/documents/{candidate.document_id}"
+                    app._ai_review_redirect_location(candidate.document_id, object_id)
                     if candidate.document_id
                     else "/inbox",
                 )
@@ -1187,7 +1202,10 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     self.send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self.send_response(HTTPStatus.SEE_OTHER)
-                self.send_header("Location", f"/documents/{document_id}")
+                self.send_header(
+                    "Location",
+                    app._ai_review_redirect_location(document_id, object_id),
+                )
                 self.end_headers()
                 return
 

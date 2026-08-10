@@ -230,7 +230,7 @@ class CaptureAppTests(unittest.TestCase):
                         body,
                     )
                     self.assertEqual(status, 303)
-                    self.assertEqual(location, f"/documents/{document.id}")
+                    self.assertTrue(location.startswith(f"/documents/{document.id}#"))
             finally:
                 server.shutdown()
                 server.server_close()
@@ -272,6 +272,10 @@ class CaptureAppTests(unittest.TestCase):
             )
             insight = _create_ai_candidate(archive, document.id, "Insight", "Insikt")
             question = _create_ai_candidate(archive, document.id, "Question", "Fråga")
+            ordered_claims = sorted(
+                (first_claim, second_claim),
+                key=lambda item: (item.created_at, item.id),
+            )
             app = CaptureApp(archive)
             server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
             thread = threading.Thread(target=server.serve_forever)
@@ -283,7 +287,10 @@ class CaptureAppTests(unittest.TestCase):
                     "decision=accept&content=Sammanfattning",
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(location, f"/documents/{document.id}")
+                self.assertEqual(
+                    location,
+                    f"/documents/{document.id}#candidate-{ordered_claims[0].id}",
+                )
 
                 html = _get(server, f"/documents/{document.id}")
                 self.assertNotIn(
@@ -303,7 +310,7 @@ class CaptureAppTests(unittest.TestCase):
                         f"decision=accept&content={claim.content.replace(' ', '+')}",
                     )
                     self.assertEqual(status, 303)
-                    self.assertEqual(location, f"/documents/{document.id}")
+                    self.assertTrue(location.startswith(f"/documents/{document.id}#"))
 
                 status, location = _post(
                     server,
@@ -311,7 +318,7 @@ class CaptureAppTests(unittest.TestCase):
                     "decision=later",
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(location, f"/documents/{document.id}")
+                self.assertEqual(location, f"/documents/{document.id}#candidate-{question.id}")
 
                 status, _ = _post(
                     server,
@@ -333,6 +340,84 @@ class CaptureAppTests(unittest.TestCase):
             )
             self.assertEqual(archive.get_knowledge_object(insight.id).review_status, "later")
             self.assertEqual(archive.get_knowledge_object(question.id).review_status, "candidate")
+
+    def test_ai_review_redirect_targets_next_candidate_by_display_order(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            project = archive.create_project("Relevant projekt")
+            first_claim = _create_ai_candidate(
+                archive, document.id, "Claim", "Första claim"
+            )
+            second_claim = _create_ai_candidate(
+                archive, document.id, "Claim", "Andra claim"
+            )
+            insight = _create_ai_candidate(archive, document.id, "Insight", "Insikt")
+            question = _create_ai_candidate(archive, document.id, "Question", "Fråga")
+            project_suggestion = _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Projektförslag",
+                project_ids=(project.id,),
+            )
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/candidates/{first_claim.id}",
+                    "decision=accept&content=Första+claim",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(
+                    location, f"/documents/{document.id}#candidate-{second_claim.id}"
+                )
+
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/candidates/{second_claim.id}",
+                    "decision=accept&content=Andra+claim",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(
+                    location, f"/documents/{document.id}#candidate-{insight.id}"
+                )
+
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/candidates/{insight.id}",
+                    "decision=accept&content=Insikt",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(
+                    location, f"/documents/{document.id}#candidate-{question.id}"
+                )
+
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/candidates/{question.id}",
+                    "decision=accept&content=Fråga",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(
+                    location,
+                    f"/documents/{document.id}#candidate-{project_suggestion.id}",
+                )
+
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/candidates/{project_suggestion.id}",
+                    "decision=reject",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, f"/documents/{document.id}#ai-review")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
 
     def test_inbox_ai_review_posts_are_grouped_by_document_and_count_candidates(self) -> None:
         with workspace_tempdir() as tmp:
@@ -428,6 +513,7 @@ class CaptureAppTests(unittest.TestCase):
                 html.index('id="ai-ProjectSuggestion"'),
             ]
             self.assertEqual(positions, sorted(positions))
+            self.assertIn('id="candidate-', html)
 
     def test_project_suggestion_can_link_document_without_creating_accepted_knowledge(self) -> None:
         with workspace_tempdir() as tmp:
@@ -458,7 +544,7 @@ class CaptureAppTests(unittest.TestCase):
                     "decision=link_project",
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(location, f"/documents/{document.id}")
+                self.assertEqual(location, f"/documents/{document.id}#ai-review")
             finally:
                 server.shutdown()
                 server.server_close()
