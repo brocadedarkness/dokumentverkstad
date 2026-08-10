@@ -644,12 +644,12 @@ Denna iteration omfattar:
 
 Iterationen implementerar:
 
-- CLI
-- driftkommandon
-- Trash
-- restore
-- index rebuild
+- kontinuerlig drift
+- bakgrundsbevakning av Ingest Source
 - backup-rutiner
+- återställning av hela systemet
+- administrativa driftverktyg
+- övervakning och felsökning
 
 ## Tester
 
@@ -664,3 +664,70 @@ Iterationen är godkänd när:
 Iteration 8 är klar när följande scenario fungerar:
 
 > Anders använder Dokumentverkstad som sitt dagliga arbetsverktyg. Han tänker sällan på hur systemet fungerar, utan använder det på samma självklara sätt som en programmerare använder sitt IDE.
+
+# Iteration 9 – Konsolidering
+
+## Mål
+
+Iteration 9 syftar inte till att införa ny kärnfunktionalitet.
+
+Målet är istället att konsolidera Dokumentverkstad till ett sammanhängande, snabbt och intuitivt arbetsverktyg.
+
+Efter denna iteration ska hela arbetsflödet upplevas som naturligt även vid daglig användning.
+
+## Fokusområden
+
+Iterationen omfattar framför allt:
+
+* förbättrad informationsarkitektur,
+* förbättrad navigering,
+* effektivare arbetsflöden,
+* förbättrad layout och typografi,
+* konsekvent interaktion mellan systemets olika vyer.
+
+## Utgångspunkt
+
+Utgångspunkten är verklig användning.
+
+Förändringar ska i första hand bygga på observationer från UX_NOTES.md och praktisk användning av systemet, inte på spekulativ design.
+
+## Exempel på förbättringar
+
+Exempel på förbättringar som kan ingå:
+
+* förbättrad Inbox,
+* effektivare Capture,
+* bättre Document-vy,
+* bättre Project-vy,
+* tangentbordsgenvägar,
+* swipe-gester,
+* drag-and-drop där det förenklar arbetsflödet,
+* förbättrad mobilanpassning,
+* förbättrad e-ink-användning,
+* tydligare typografi,
+* bättre spacing,
+* färger och visuell hierarki,
+* snabbare navigering mellan relaterade objekt,
+* bättre återkoppling efter användarhandlingar.
+
+Listan är inte uttömmande.
+
+Iterationen ska styras av faktisk användning.
+
+## Designprincip
+
+Varje förändring ska minska friktion i ett verkligt arbetsflöde.
+
+Ingen förändring ska införas enbart därför att den ser modern eller estetiskt tilltalande ut.
+
+## Leverans
+
+När Iteration 9 är färdig ska Dokumentverkstad upplevas som ett sammanhängande arbetsverktyg snarare än en samling funktioner.
+
+Systemets användbarhet ska förbättras utan att förändra dess grundläggande domänmodell eller arbetsprocess.
+
+## Klart när
+
+Iteration 9 är klar när följande scenario fungerar:
+
+> Anders arbetar en hel dag i Dokumentverkstad utan att tänka på gränssnittet. Han fokuserar på sina dokument och sitt tänkande, medan systemet känns snabbt, naturligt och konsekvent i varje arbetsmoment.
