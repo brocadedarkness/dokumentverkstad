@@ -8,7 +8,7 @@ Aktuell användardokumentation finns i:
 
 * [docs/USER_GUIDE.md](docs/USER_GUIDE.md)
 
-Guiden beskriver den funktionalitet som faktiskt finns implementerad efter Iteration 4.
+Guiden beskriver den funktionalitet som faktiskt finns implementerad.
 
 ## Projektdokumentation
 
