@@ -2,7 +2,7 @@
 
 Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 6.
 
-Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, gå igenom nya Documents och AI-kandidater i Inbox, fånga noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source och köra valfri AI-analys efter uttryckligt godkännande.
+Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, se väntande arbete i Inbox, fånga noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source och köra valfri AI-analys efter uttryckligt godkännande.
 
 ## Starta Dokumentverkstad
 
@@ -181,15 +181,9 @@ För varje Document kan du:
 
 Inbox är inte en separat lagringsplats. Den visar Documents utifrån deras sparade status i Archive.
 
-För varje AI-kandidat kan du:
+För varje väntande AI-kandidat visar Inbox en egen post med kandidattyp, vilket Document kandidaten hör till, en kort identifiering och en länk för att granska kandidaten på Document-sidan.
 
-* acceptera,
-* redigera formuleringen och acceptera,
-* skjuta upp,
-* avvisa,
-* ange frivillig avvisningsorsak.
-
-När en AI-kandidat accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen.
+AI-kandidater accepteras, redigeras, avvisas eller skjuts upp från Document-sidan, inte direkt från Inbox. När en AI-kandidat har behandlats försvinner dess Inbox-post automatiskt.
 
 Om Inbox saknar objekt visas ett tomt tillstånd.
 
@@ -223,7 +217,7 @@ Document-vyn visar:
 * direkt kopplade Projects,
 * möjlighet att förbereda AI-analys när extraherad text finns,
 * tidigare AI-körningar,
-* väntande AI-kandidater,
+* väntande AI-kandidater med review-formulär,
 * Capture med Document som context,
 * Knowledge Objects kopplade till dokumentet.
 
@@ -347,7 +341,11 @@ Det som skickas till OpenAI är:
 
 Original-PDF skickas inte.
 
-AI-resultatet sparas som kandidater, inte som etablerad kunskap. Kandidaterna visas i Inbox för review.
+AI-resultatet sparas som kandidater, inte som etablerad kunskap. Kandidaterna visas i Inbox som väntande poster som länkar till dokumentet.
+
+På Document-sidan visas väntande AI-kandidater grupperade i ordningen Summary, Claims, Insights, Questions och Project Suggestions. Där kan du acceptera, redigera och acceptera, skjuta upp eller avvisa varje kandidat. Vid avvisning kan du ange en frivillig avvisningsorsak.
+
+När en AI-kandidat accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen. Efter varje beslut återgår sidan till samma Document så att resten av AI-resultatet kan reviewas utan att lämna dokumentet.
 
 Efter körningen sparas en AI-körning i Archive med:
 

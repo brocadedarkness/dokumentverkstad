@@ -275,7 +275,7 @@ Användaren ska kunna:
 * läsa kort sammanfattning,
 * välja ett eller flera Projects,
 * lämna objektet i General,
-* godkänna eller avvisa AI-förslag,
+* öppna rätt arbetskontext för AI-förslag som behöver granskas,
 * skjuta upp,
 * kasta.
 

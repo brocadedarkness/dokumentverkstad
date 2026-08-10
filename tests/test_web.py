@@ -76,6 +76,7 @@ class CaptureAppTests(unittest.TestCase):
 
             self.assertIn("Inbox är tom.", html)
             self.assertIn("Trash", html)
+            self.assertEqual(html.count("data-ai-inbox-candidate-id="), 0)
 
     def test_new_document_appears_in_inbox_and_can_be_opened(self) -> None:
         with workspace_tempdir() as tmp:
@@ -222,10 +223,12 @@ class CaptureAppTests(unittest.TestCase):
                 )
                 for candidate_id, body in requests:
                     status, location = _post(
-                        server, f"/inbox/candidates/{candidate_id}", body
+                        server,
+                        f"/documents/{document.id}/candidates/{candidate_id}",
+                        body,
                     )
                     self.assertEqual(status, 303)
-                    self.assertEqual(location, "/inbox")
+                    self.assertEqual(location, f"/documents/{document.id}")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -270,40 +273,43 @@ class CaptureAppTests(unittest.TestCase):
             try:
                 status, location = _post(
                     server,
-                    f"/inbox/candidates/{summary.id}",
+                    f"/documents/{document.id}/candidates/{summary.id}",
                     "decision=accept&content=Sammanfattning",
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(location, "/inbox")
+                self.assertEqual(location, f"/documents/{document.id}")
 
-                html = _get(server, "/inbox")
-                self.assertNotIn(f'action="/inbox/candidates/{summary.id}"', html)
+                html = _get(server, f"/documents/{document.id}")
+                self.assertNotIn(
+                    f'data-ai-review-candidate-id="{summary.id}"', html
+                )
                 for candidate in (first_claim, second_claim, insight, question):
                     self.assertIn(
-                        f'action="/inbox/candidates/{candidate.id}"', html
+                        f'action="/documents/{document.id}/candidates/{candidate.id}"',
+                        html,
                     )
                 self.assertLess(html.index("Claims"), html.index("Insights"))
 
                 for claim in (first_claim, second_claim):
                     status, location = _post(
                         server,
-                        f"/inbox/candidates/{claim.id}",
+                        f"/documents/{document.id}/candidates/{claim.id}",
                         f"decision=accept&content={claim.content.replace(' ', '+')}",
                     )
                     self.assertEqual(status, 303)
-                    self.assertEqual(location, "/inbox")
+                    self.assertEqual(location, f"/documents/{document.id}")
 
                 status, location = _post(
                     server,
-                    f"/inbox/candidates/{insight.id}",
+                    f"/documents/{document.id}/candidates/{insight.id}",
                     "decision=later",
                 )
                 self.assertEqual(status, 303)
-                self.assertEqual(location, "/inbox")
+                self.assertEqual(location, f"/documents/{document.id}")
 
                 status, _ = _post(
                     server,
-                    f"/inbox/candidates/{summary.id}",
+                    f"/documents/{document.id}/candidates/{summary.id}",
                     "decision=reject&rejection_reason=annat",
                 )
                 self.assertEqual(status, 400)
@@ -322,7 +328,54 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(archive.get_knowledge_object(insight.id).review_status, "later")
             self.assertEqual(archive.get_knowledge_object(question.id).review_status, "candidate")
 
-    def test_inbox_groups_ai_candidates_by_semantic_type_order(self) -> None:
+    def test_inbox_ai_candidate_posts_match_pending_candidates_and_link_to_document(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            first_document = archive.create_document("Första dokumentet")
+            second_document = archive.create_document("Andra dokumentet")
+            first = _create_ai_candidate(archive, first_document.id, "Summary", "Ett")
+            second = _create_ai_candidate(archive, first_document.id, "Claim", "Två")
+            third = _create_ai_candidate(archive, second_document.id, "Insight", "Tre")
+            app = CaptureApp(archive)
+
+            html = app.render_inbox()
+
+            self.assertEqual(html.count("data-ai-inbox-candidate-id="), 3)
+            for candidate in (first, second, third):
+                self.assertIn(
+                    f'data-ai-inbox-candidate-id="{candidate.id}"',
+                    html,
+                )
+            self.assertIn(f'href="/documents/{first_document.id}"', html)
+            self.assertIn(f'href="/documents/{second_document.id}"', html)
+            self.assertNotIn("<textarea", html)
+            self.assertNotIn("/candidates/", html)
+            self.assertNotIn("data-ai-review-candidate-id=", html)
+            self.assertNotIn("Acceptera", html)
+            self.assertNotIn("Avvisa", html)
+
+            app.review_ai_candidate_from_form(
+                first.id,
+                "decision=accept&content=Ett".encode("utf-8"),
+            )
+            html_after_one_review = app.render_inbox()
+            self.assertEqual(html_after_one_review.count("data-ai-inbox-candidate-id="), 2)
+            self.assertNotIn(
+                f'data-ai-inbox-candidate-id="{first.id}"',
+                html_after_one_review,
+            )
+
+            app.review_ai_candidate_from_form(
+                second.id,
+                "decision=reject&rejection_reason=annat".encode("utf-8"),
+            )
+            app.review_ai_candidate_from_form(third.id, b"decision=accept&content=Tre")
+            restarted = Archive(Path(tmp) / "archive")
+            restarted_app = CaptureApp(restarted)
+            final_html = restarted_app.render_inbox()
+            self.assertEqual(final_html.count("data-ai-inbox-candidate-id="), 0)
+
+    def test_document_groups_ai_candidates_by_semantic_type_order(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
             document = archive.create_document("AI-dokument")
@@ -335,7 +388,7 @@ class CaptureAppTests(unittest.TestCase):
             _create_ai_candidate(archive, document.id, "Claim", "Påstående")
             app = CaptureApp(archive)
 
-            html = app.render_inbox()
+            html = app.render_document(document.id)
 
             positions = [
                 html.index('id="ai-Summary"'),

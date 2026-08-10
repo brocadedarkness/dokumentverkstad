@@ -80,7 +80,7 @@ class CaptureApp:
         rendered_documents = "\n".join(
             self._render_inbox_document(document) for document in documents
         )
-        rendered_candidates = self._render_ai_candidate_groups(candidates)
+        rendered_candidates = self._render_ai_inbox_candidates(candidates)
         empty_notice = "<p>Inbox är tom.</p>" if not documents and not candidates else ""
         if not rendered_documents:
             rendered_documents = "<p>Inga väntande documents.</p>"
@@ -589,6 +589,32 @@ class CaptureApp:
       </article>
 """
 
+    def _render_ai_inbox_candidates(self, candidates: list[KnowledgeObject]) -> str:
+        rendered_items = "\n".join(
+            self._render_ai_inbox_candidate(candidate)
+            for candidate in self._sort_ai_candidates_for_review(candidates)
+        )
+        return rendered_items
+
+    def _render_ai_inbox_candidate(self, candidate: KnowledgeObject) -> str:
+        document_title = "Okänt document"
+        document_href = "/documents"
+        if candidate.document_id:
+            document = self.archive.get_document(candidate.document_id)
+            document_title = document.title
+            document_href = f"/documents/{escape(document.id)}"
+        snippet = candidate.original_content or candidate.content
+        if len(snippet) > 120:
+            snippet = f"{snippet[:117].rstrip()}..."
+        return f"""
+      <article data-ai-inbox-candidate-id="{escape(candidate.id)}">
+        <h3>{escape(candidate.semantic_type)} väntar</h3>
+        <p>Document: <a href="{document_href}">{escape(document_title)}</a></p>
+        <p>{escape(snippet)}</p>
+        <p><a href="{document_href}">Granska</a></p>
+      </article>
+"""
+
     def _render_ai_candidate_groups(self, candidates: list[KnowledgeObject]) -> str:
         groups = (
             ("Summary", "Summary"),
@@ -601,7 +627,7 @@ class CaptureApp:
         for heading, semantic_type in groups:
             items = [
                 candidate
-                for candidate in candidates
+                for candidate in self._sort_ai_candidates_for_review(candidates)
                 if candidate.semantic_type == semantic_type
             ]
             if not items:
@@ -615,6 +641,25 @@ class CaptureApp:
 """
             )
         return "\n".join(rendered_groups)
+
+    def _sort_ai_candidates_for_review(
+        self, candidates: list[KnowledgeObject]
+    ) -> list[KnowledgeObject]:
+        order = {
+            "Summary": 0,
+            "Claim": 1,
+            "Insight": 2,
+            "Question": 3,
+            "ProjectSuggestion": 4,
+        }
+        return sorted(
+            candidates,
+            key=lambda item: (
+                order.get(item.semantic_type, 99),
+                item.created_at,
+                item.id,
+            ),
+        )
 
     def _render_ai_candidate(self, candidate: KnowledgeObject) -> str:
         rejection_options = "\n".join(
@@ -646,13 +691,13 @@ class CaptureApp:
             f"{escape(candidate.prompt_version)}"
         )
         return f"""
-      <article>
+      <article data-ai-review-candidate-id="{escape(candidate.id)}">
         <h3>{escape(candidate.semantic_type)}</h3>
         {document_link}
         <p>{escape(candidate.original_content or candidate.content)}</p>
         {confidence}
         <p>Proveniens: AI - {provenance}</p>
-        <form method="post" action="/inbox/candidates/{escape(candidate.id)}">
+        <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
           <label for="content-{escape(candidate.id)}">Formulering</label>
           <textarea id="content-{escape(candidate.id)}" name="content">{escape(candidate.content)}</textarea>
           <label for="reason-{escape(candidate.id)}">Avvisningsorsak</label>
@@ -681,12 +726,9 @@ class CaptureApp:
             if text_available
             else "<p>AI-analys kräver extraherad dokumenttext.</p>"
         )
-        rendered_candidates = "\n".join(
-            f"<li>{escape(candidate.semantic_type)}: {escape(candidate.content)}</li>"
-            for candidate in candidates
-        )
+        rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
-            rendered_candidates = "<li>Inga väntande AI-kandidater för dokumentet.</li>"
+            rendered_candidates = "<p>Inga väntande AI-kandidater för dokumentet.</p>"
         rendered_runs = "\n".join(
             (
                 f"<li>{escape(run.status)} - {escape(run.model)} - "
@@ -702,7 +744,7 @@ class CaptureApp:
       <h2 id="document-ai">AI</h2>
       {ai_action}
       <h3>Väntande kandidater</h3>
-      <ul>{rendered_candidates}</ul>
+      {rendered_candidates}
       <h3>AI-körningar</h3>
       <ul>{rendered_runs}</ul>
     </section>
@@ -965,12 +1007,37 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path.startswith("/inbox/candidates/"):
                 object_id = unquote(parsed.path.removeprefix("/inbox/candidates/"))
                 try:
-                    app.review_ai_candidate_from_form(object_id, body)
+                    candidate = app.review_ai_candidate_from_form(object_id, body)
                 except ValueError as error:
                     self.send_error(HTTPStatus.BAD_REQUEST, str(error))
                     return
                 self.send_response(HTTPStatus.SEE_OTHER)
-                self.send_header("Location", "/inbox")
+                self.send_header(
+                    "Location",
+                    f"/documents/{candidate.document_id}"
+                    if candidate.document_id
+                    else "/inbox",
+                )
+                self.end_headers()
+                return
+
+            if parsed.path.startswith("/documents/") and "/candidates/" in parsed.path:
+                document_path = unquote(parsed.path.removeprefix("/documents/"))
+                document_id, separator, object_id = document_path.partition("/candidates/")
+                if not separator:
+                    self.send_error(HTTPStatus.BAD_REQUEST)
+                    return
+                existing_candidate = app.archive.get_knowledge_object(object_id)
+                if existing_candidate.document_id and existing_candidate.document_id != document_id:
+                    self.send_error(HTTPStatus.BAD_REQUEST, "Candidate belongs to another document.")
+                    return
+                try:
+                    candidate = app.review_ai_candidate_from_form(object_id, body)
+                except ValueError as error:
+                    self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", f"/documents/{document_id}")
                 self.end_headers()
                 return
 

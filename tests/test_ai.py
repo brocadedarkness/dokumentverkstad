@@ -307,8 +307,10 @@ class AiTests(unittest.TestCase):
             html = app.render_inbox()
 
             self.assertIn("AI-kandidater", html)
-            self.assertIn("Proveniens: AI", html)
-            self.assertIn("Acceptera", html)
+            self.assertIn("väntar", html)
+            self.assertIn(f"/documents/{document.id}", html)
+            self.assertNotIn("Proveniens: AI", html)
+            self.assertNotIn("Acceptera", html)
 
     def test_pending_ai_candidates_are_not_listed_as_capture_notes(self) -> None:
         with workspace_tempdir() as tmp:
