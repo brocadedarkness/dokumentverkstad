@@ -313,19 +313,7 @@ class OpenAiProvider(AiProvider):
         except Exception as error:
             raise AiProviderError(f"AI-anropet misslyckades: {error.__class__.__name__}") from error
 
-        try:
-            data = json.loads(response.output_text)
-        except (AttributeError, json.JSONDecodeError) as error:
-            raise InvalidAiResultError("AI-resultatet var inte giltig strukturerad JSON.") from error
-
-        candidates = _candidates_from_payload(data)
-        usage = getattr(response, "usage", None)
-        input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
-        output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
-        return AiAnalysisResult(
-            candidates=candidates,
-            usage=AiUsage(input_tokens=input_tokens, output_tokens=output_tokens),
-        )
+        return _analysis_result_from_openai_response(response)
 
 
 def estimate_input_tokens(text: str) -> int:
@@ -395,8 +383,9 @@ def _analysis_input(
                 f"Promptversion: {PROMPT_VERSION}\n"
                 f"Dokumenttitel: {title}\n"
                 f"Befintliga projekt:\n{project_lines or '- inga'}\n\n"
-                "Skapa kort sammanfattning, candidate insights, candidate claims, "
-                "candidate questions och eventuella projektförslag.\n\n"
+                "Fyll JSON-schemats fält: summary, candidate_insights, "
+                "candidate_claims, candidate_questions och project_suggestions. "
+                "Använd tomma listor när ett fält saknar rimliga kandidater.\n\n"
                 f"Extraherad text:\n{text}"
             ),
         },
@@ -404,55 +393,180 @@ def _analysis_input(
 
 
 def _response_format_schema() -> dict[str, object]:
-    item = {
+    text_candidate = {
         "type": "object",
         "properties": {
-            "capability": {
-                "type": "string",
-                "enum": list(AI_CAPABILITIES),
-            },
+            "content": {"type": "string"},
+            "confidence": {"type": "string", "enum": ["", "låg", "medel", "hög"]},
+        },
+        "required": ["content", "confidence"],
+        "additionalProperties": False,
+    }
+    project_candidate = {
+        "type": "object",
+        "properties": {
             "content": {"type": "string"},
             "confidence": {"type": "string", "enum": ["", "låg", "medel", "hög"]},
             "project_id": {"type": "string"},
             "project_name": {"type": "string"},
         },
-        "required": ["capability", "content", "confidence", "project_id", "project_name"],
+        "required": ["content", "confidence", "project_id", "project_name"],
         "additionalProperties": False,
     }
     return {
         "type": "json_schema",
-        "name": "document_analysis_candidates",
+        "name": "document_analysis",
         "strict": True,
         "schema": {
             "type": "object",
             "properties": {
-                "candidates": {"type": "array", "items": item},
+                "summary": text_candidate,
+                "candidate_insights": {"type": "array", "items": text_candidate},
+                "candidate_claims": {"type": "array", "items": text_candidate},
+                "candidate_questions": {"type": "array", "items": text_candidate},
+                "project_suggestions": {"type": "array", "items": project_candidate},
             },
-            "required": ["candidates"],
+            "required": [
+                "summary",
+                "candidate_insights",
+                "candidate_claims",
+                "candidate_questions",
+                "project_suggestions",
+            ],
             "additionalProperties": False,
         },
     }
 
 
-def _candidates_from_payload(data: dict[str, object]) -> tuple[AiCandidate, ...]:
-    raw_candidates = data.get("candidates", [])
-    if not isinstance(raw_candidates, list):
-        raise InvalidAiResultError("AI-resultatet saknar kandidatlista.")
-    candidates: list[AiCandidate] = []
-    for item in raw_candidates:
-        if not isinstance(item, dict):
-            raise InvalidAiResultError("AI-resultatet innehåller en ogiltig kandidat.")
-        capability = str(item.get("capability", "")).strip()
-        content = str(item.get("content", "")).strip()
-        if capability not in AI_CAPABILITIES or not content:
-            raise InvalidAiResultError("AI-resultatet innehåller en ofullständig kandidat.")
-        candidates.append(
-            AiCandidate(
-                capability=capability,
-                content=content,
-                confidence=str(item.get("confidence", "")).strip(),
-                project_id=str(item.get("project_id", "")).strip(),
-                project_name=str(item.get("project_name", "")).strip(),
-            )
+def _analysis_result_from_openai_response(response: object) -> AiAnalysisResult:
+    _raise_for_incomplete_response(response)
+    _raise_for_refusal(response)
+    try:
+        data = json.loads(_output_text_from_response(response))
+    except json.JSONDecodeError as error:
+        raise InvalidAiResultError("AI-resultatet var inte giltig strukturerad JSON.") from error
+    if not isinstance(data, dict):
+        raise InvalidAiResultError("AI-resultatet var inte ett JSON-objekt.")
+
+    return AiAnalysisResult(
+        candidates=_candidates_from_payload(data),
+        usage=_usage_from_response(response),
+    )
+
+
+def _raise_for_incomplete_response(response: object) -> None:
+    status = str(_field(response, "status", "") or "")
+    if status in ("", "completed"):
+        return
+    if status == "incomplete":
+        details = _field(response, "incomplete_details", None)
+        reason = str(_field(details, "reason", "") or "okänd orsak")
+        raise AiProviderError(
+            f"AI-svaret blev ofullständigt ({reason}). Inga kandidater sparades."
         )
+    raise AiProviderError(
+        f"AI-provider returnerade status {status}. Inga kandidater sparades."
+    )
+
+
+def _raise_for_refusal(response: object) -> None:
+    if _refusal_from_response(response):
+        raise AiProviderError(
+            "AI-provider avböjde att analysera dokumentet. Inga kandidater sparades."
+        )
+
+
+def _refusal_from_response(response: object) -> str:
+    for part in _content_parts(response):
+        if str(_field(part, "type", "") or "") == "refusal":
+            return str(_field(part, "refusal", "") or "refusal")
+    return ""
+
+
+def _output_text_from_response(response: object) -> str:
+    output_text = str(_field(response, "output_text", "") or "").strip()
+    if output_text:
+        return output_text
+    parts = [
+        str(_field(part, "text", "") or "")
+        for part in _content_parts(response)
+        if str(_field(part, "type", "") or "") == "output_text"
+    ]
+    output_text = "".join(parts).strip()
+    if not output_text:
+        raise InvalidAiResultError("AI-svaret saknade strukturerad output-text.")
+    return output_text
+
+
+def _content_parts(response: object) -> tuple[object, ...]:
+    parts: list[object] = []
+    output = _field(response, "output", ()) or ()
+    for item in output if isinstance(output, (list, tuple)) else (output,):
+        content = _field(item, "content", ()) or ()
+        if isinstance(content, (list, tuple)):
+            parts.extend(content)
+        else:
+            parts.append(content)
+    return tuple(parts)
+
+
+def _usage_from_response(response: object) -> AiUsage:
+    usage = _field(response, "usage", None)
+    return AiUsage(
+        input_tokens=int(_field(usage, "input_tokens", 0) or 0),
+        output_tokens=int(_field(usage, "output_tokens", 0) or 0),
+    )
+
+
+def _field(value: object, name: str, default: object = None) -> object:
+    if isinstance(value, dict):
+        return value.get(name, default)
+    return getattr(value, name, default)
+
+
+def _candidates_from_payload(data: dict[str, object]) -> tuple[AiCandidate, ...]:
+    candidates: list[AiCandidate] = [
+        _candidate_from_payload("summary", _required_dict(data, "summary"))
+    ]
+    for section, capability in (
+        ("candidate_insights", "candidate_insight"),
+        ("candidate_claims", "candidate_claim"),
+        ("candidate_questions", "candidate_question"),
+    ):
+        for item in _required_list(data, section):
+            candidates.append(_candidate_from_payload(capability, item))
+    for item in _required_list(data, "project_suggestions"):
+        candidates.append(_candidate_from_payload("project_suggestion", item))
     return tuple(candidates)
+
+
+def _candidate_from_payload(capability: str, item: dict[str, object]) -> AiCandidate:
+    content = str(item.get("content", "")).strip()
+    confidence = str(item.get("confidence", "")).strip()
+    if capability not in AI_CAPABILITIES or not content:
+        raise InvalidAiResultError("AI-resultatet innehåller en ofullständig kandidat.")
+    if confidence not in ("", "låg", "medel", "hög"):
+        raise InvalidAiResultError("AI-resultatet innehåller ogiltig confidence.")
+    return AiCandidate(
+        capability=capability,
+        content=content,
+        confidence=confidence,
+        project_id=str(item.get("project_id", "")).strip(),
+        project_name=str(item.get("project_name", "")).strip(),
+    )
+
+
+def _required_dict(data: dict[str, object], name: str) -> dict[str, object]:
+    value = data.get(name)
+    if not isinstance(value, dict):
+        raise InvalidAiResultError(f"AI-resultatet saknar fältet {name}.")
+    return value
+
+
+def _required_list(data: dict[str, object], name: str) -> list[dict[str, object]]:
+    value = data.get(name)
+    if not isinstance(value, list):
+        raise InvalidAiResultError(f"AI-resultatet saknar listan {name}.")
+    if not all(isinstance(item, dict) for item in value):
+        raise InvalidAiResultError(f"AI-resultatet innehåller ogiltiga poster i {name}.")
+    return value

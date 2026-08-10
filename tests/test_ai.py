@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 
 from dokumentverkstad.ai import (
@@ -12,7 +14,10 @@ from dokumentverkstad.ai import (
     AiUsage,
     AI_CAPABILITIES,
     LONG_CONTEXT_INPUT_TOKEN_THRESHOLD,
+    InvalidAiResultError,
     MockAiProvider,
+    _analysis_result_from_openai_response,
+    _response_format_schema,
     estimate_cost,
     estimate_input_tokens,
 )
@@ -36,6 +41,26 @@ class FailingAiProvider(AiProvider):
         raise AiProviderError("simulerat AI-fel")
 
 
+class InvalidStructuredAiProvider(AiProvider):
+    name = "mock"
+
+    def analyze_document(
+        self,
+        title: str,
+        text: str,
+        projects: tuple[tuple[str, str], ...],
+        model: str,
+    ) -> AiAnalysisResult:
+        return _analysis_result_from_openai_response(
+            SimpleNamespace(
+                status="completed",
+                output_text=json.dumps({"summary": {"content": "Ofullständigt"}}),
+                output=[],
+                usage=SimpleNamespace(input_tokens=10, output_tokens=10),
+            )
+        )
+
+
 class AiTests(unittest.TestCase):
     def test_mock_provider_returns_structured_candidates_and_usage(self) -> None:
         provider = MockAiProvider()
@@ -51,6 +76,92 @@ class AiTests(unittest.TestCase):
         self.assertEqual(result.candidates[0].capability, "summary")
         self.assertGreater(result.usage.input_tokens, 0)
         self.assertGreater(result.usage.output_tokens, 0)
+
+    def test_openai_response_format_uses_explicit_json_schema(self) -> None:
+        response_format = _response_format_schema()
+        schema = response_format["schema"]
+
+        self.assertEqual(response_format["type"], "json_schema")
+        self.assertTrue(response_format["strict"])
+        self.assertEqual(response_format["name"], "document_analysis")
+        self.assertEqual(
+            schema["required"],
+            [
+                "summary",
+                "candidate_insights",
+                "candidate_claims",
+                "candidate_questions",
+                "project_suggestions",
+            ],
+        )
+
+    def test_openai_structured_output_parser_accepts_valid_payload(self) -> None:
+        response = SimpleNamespace(
+            status="completed",
+            output_text=json.dumps(_valid_structured_payload()),
+            output=[],
+            usage=SimpleNamespace(input_tokens=123, output_tokens=45),
+        )
+
+        result = _analysis_result_from_openai_response(response)
+
+        self.assertEqual(result.usage.input_tokens, 123)
+        self.assertEqual(result.usage.output_tokens, 45)
+        self.assertEqual(
+            [candidate.capability for candidate in result.candidates],
+            [
+                "summary",
+                "candidate_insight",
+                "candidate_claim",
+                "candidate_question",
+                "project_suggestion",
+            ],
+        )
+        self.assertEqual(result.candidates[-1].project_id, "project_1")
+
+    def test_openai_structured_output_parser_rejects_schema_errors(self) -> None:
+        response = SimpleNamespace(
+            status="completed",
+            output_text=json.dumps({"summary": {"content": "Saknar confidence"}}),
+            output=[],
+            usage=SimpleNamespace(input_tokens=1, output_tokens=1),
+        )
+
+        with self.assertRaises(InvalidAiResultError):
+            _analysis_result_from_openai_response(response)
+
+    def test_openai_refusal_is_reported_without_json_error(self) -> None:
+        response = SimpleNamespace(
+            status="completed",
+            output_text="",
+            output=[
+                {
+                    "type": "message",
+                    "content": [
+                        {
+                            "type": "refusal",
+                            "refusal": "Kan inte hjälpa med detta.",
+                        }
+                    ],
+                }
+            ],
+            usage=None,
+        )
+
+        with self.assertRaisesRegex(AiProviderError, "avböjde"):
+            _analysis_result_from_openai_response(response)
+
+    def test_openai_incomplete_response_is_reported_without_json_error(self) -> None:
+        response = SimpleNamespace(
+            status="incomplete",
+            incomplete_details=SimpleNamespace(reason="max_output_tokens"),
+            output_text="",
+            output=[],
+            usage=None,
+        )
+
+        with self.assertRaisesRegex(AiProviderError, "ofullständigt"):
+            _analysis_result_from_openai_response(response)
 
     def test_secrets_loader_prefers_environment_over_file(self) -> None:
         with workspace_tempdir() as tmp:
@@ -264,6 +375,18 @@ class AiTests(unittest.TestCase):
             self.assertEqual(runs[0].status, "failed")
             self.assertEqual(archive.get_document(document.id).title, "Digital rapport")
 
+    def test_invalid_ai_result_does_not_create_candidates(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive, document = _archive_with_pdf_document(Path(tmp))
+            app = CaptureApp(archive, ai_provider=InvalidStructuredAiProvider())
+
+            with self.assertRaises(InvalidAiResultError):
+                app.run_document_ai_analysis_from_form(document.id, b"confirm_ai=yes")
+
+            self.assertEqual(archive.list_ai_candidates_for_inbox(), [])
+            runs = archive.list_ai_runs_for_document(document.id)
+            self.assertEqual(runs[0].status, "failed")
+
     def test_document_without_extracted_text_is_reported_clearly(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -290,6 +413,29 @@ def _archive_with_pdf_document(root: Path) -> tuple[Archive, object]:
         checksum_sha256=calculate_checksum(pdf_path),
     )
     return archive, document
+
+
+def _valid_structured_payload() -> dict[str, object]:
+    return {
+        "summary": {"content": "Kort sammanfattning.", "confidence": "medel"},
+        "candidate_insights": [
+            {"content": "Ett möjligt tema.", "confidence": "medel"}
+        ],
+        "candidate_claims": [
+            {"content": "Ett centralt påstående.", "confidence": "hög"}
+        ],
+        "candidate_questions": [
+            {"content": "Vad behöver undersökas?", "confidence": "låg"}
+        ],
+        "project_suggestions": [
+            {
+                "content": "Relevant för projektet.",
+                "confidence": "låg",
+                "project_id": "project_1",
+                "project_name": "Institutioner",
+            }
+        ],
+    }
 
 
 if __name__ == "__main__":
