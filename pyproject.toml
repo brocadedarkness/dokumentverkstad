@@ -5,6 +5,7 @@ description = "Lokal-first arbetsyta for kumulativt kunskapsarbete."
 requires-python = ">=3.11"
 dependencies = [
   "openai>=2.11.0",
+  "PyMuPDF>=1.24.0",
 ]
 
 [build-system]

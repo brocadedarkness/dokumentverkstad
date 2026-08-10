@@ -15,6 +15,29 @@ class PdfExtraction:
 
 
 def extract_pdf(path: str | Path) -> PdfExtraction:
+    pymupdf_extraction = _extract_with_pymupdf(path)
+    if pymupdf_extraction is not None:
+        return pymupdf_extraction
+    return _extract_with_stdlib(path)
+
+
+def _extract_with_pymupdf(path: str | Path) -> PdfExtraction | None:
+    try:
+        import pymupdf
+    except ImportError:
+        return None
+
+    with pymupdf.open(path) as document:
+        metadata = document.metadata or {}
+        text = "\n".join(page.get_text("text") for page in document).strip()
+    return PdfExtraction(
+        title=str(metadata.get("title") or "").strip(),
+        author=str(metadata.get("author") or "").strip(),
+        text=text,
+    )
+
+
+def _extract_with_stdlib(path: str | Path) -> PdfExtraction:
     data = Path(path).read_bytes()
     decoded = data.decode("latin-1", errors="ignore")
     return PdfExtraction(
@@ -119,10 +142,10 @@ def _decode_pdf_string(value: str) -> str:
         elif escaped in "\r\n":
             while index < len(value) and value[index] in "\r\n":
                 index += 1
-        elif escaped.isdigit():
+        elif escaped in "01234567":
             octal = escaped
             index += 1
-            while index < len(value) and len(octal) < 3 and value[index].isdigit():
+            while index < len(value) and len(octal) < 3 and value[index] in "01234567":
                 octal += value[index]
                 index += 1
             result.append(chr(int(octal, 8)))

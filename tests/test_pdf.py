@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import unittest
 
-from dokumentverkstad.pdf import extract_pdf
+from dokumentverkstad.pdf import _extract_with_stdlib, extract_pdf
 from helpers import workspace_tempdir, write_realistic_text_array_pdf
 
 
@@ -34,6 +34,48 @@ class PdfTests(unittest.TestCase):
             self.assertGreater(pdf_path.stat().st_size, 2_000_000)
             self.assertEqual(extraction.title, "Larger PDF")
             self.assertIn("Större maskinläsbar PDF.", extraction.text)
+
+    def test_stdlib_fallback_does_not_parse_escaped_9_as_octal(self) -> None:
+        with workspace_tempdir() as tmp:
+            pdf_path = Path(tmp) / "escaped-9.pdf"
+            _write_raw_text_pdf(pdf_path, r"Version \9")
+
+            extraction = _extract_with_stdlib(pdf_path)
+
+            self.assertIn("Version 9", extraction.text)
+
+    def test_stdlib_fallback_does_not_parse_escaped_superscript_as_octal(self) -> None:
+        with workspace_tempdir() as tmp:
+            pdf_path = Path(tmp) / "escaped-superscript.pdf"
+            _write_raw_text_pdf(pdf_path, r"Not \²")
+
+            extraction = _extract_with_stdlib(pdf_path)
+
+            self.assertIn("Not ²", extraction.text)
+
+
+def _write_raw_text_pdf(path: Path, raw_pdf_string: str) -> None:
+    pdf = f"""%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 44 >>
+stream
+BT /F1 12 Tf 72 720 Td ({raw_pdf_string}) Tj ET
+endstream
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF
+"""
+    path.write_bytes(pdf.encode("latin-1"))
 
 
 if __name__ == "__main__":
