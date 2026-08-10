@@ -132,11 +132,14 @@ Systemet gör då en enkel ingest-pass:
 * extraherar grundläggande metadata när möjligt,
 * extraherar maskinläsbar text till Archive,
 * lägger det nya Document i Inbox,
+* flyttar färdigbehandlade PDF-filer till `runtime_root/ingest/processed`,
 * bygger om Document-indexet.
 
 Inga Knowledge Objects skapas automatiskt och ingen AI-analys körs.
 
 Endast PDF med maskinläsbar text stöds. OCR finns inte.
+
+Om en PDF inte kan bearbetas ligger den kvar i Ingest Source så att felet kan undersökas och filen kan försökas igen senare.
 
 ## Inbox
 
@@ -300,6 +303,7 @@ Exempel:
     trash/
   runtime/
     ingest/
+      processed/
     sqlite/
       documents.sqlite3
   ingest/
