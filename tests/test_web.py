@@ -76,7 +76,7 @@ class CaptureAppTests(unittest.TestCase):
 
             self.assertIn("Inbox är tom.", html)
             self.assertIn("Trash", html)
-            self.assertEqual(html.count("data-ai-inbox-candidate-id="), 0)
+            self.assertEqual(html.count("data-ai-inbox-document-id="), 0)
 
     def test_new_document_appears_in_inbox_and_can_be_opened(self) -> None:
         with workspace_tempdir() as tmp:
@@ -328,7 +328,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(archive.get_knowledge_object(insight.id).review_status, "later")
             self.assertEqual(archive.get_knowledge_object(question.id).review_status, "candidate")
 
-    def test_inbox_ai_candidate_posts_match_pending_candidates_and_link_to_document(self) -> None:
+    def test_inbox_ai_review_posts_are_grouped_by_document_and_count_candidates(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
             first_document = archive.create_document("Första dokumentet")
@@ -340,12 +340,18 @@ class CaptureAppTests(unittest.TestCase):
 
             html = app.render_inbox()
 
-            self.assertEqual(html.count("data-ai-inbox-candidate-id="), 3)
-            for candidate in (first, second, third):
-                self.assertIn(
-                    f'data-ai-inbox-candidate-id="{candidate.id}"',
-                    html,
-                )
+            self.assertEqual(html.count("data-ai-inbox-document-id="), 2)
+            self.assertIn(
+                f'data-ai-inbox-document-id="{first_document.id}"',
+                html,
+            )
+            self.assertIn(
+                f'data-ai-inbox-document-id="{second_document.id}"',
+                html,
+            )
+            self.assertIn("2 AI-kandidater väntar", html)
+            self.assertIn("1 AI-kandidat väntar", html)
+            self.assertIn("2 document har obearbetade AI-granskningar.", html)
             self.assertIn(f'href="/documents/{first_document.id}"', html)
             self.assertIn(f'href="/documents/{second_document.id}"', html)
             self.assertNotIn("<textarea", html)
@@ -359,21 +365,34 @@ class CaptureAppTests(unittest.TestCase):
                 "decision=accept&content=Ett".encode("utf-8"),
             )
             html_after_one_review = app.render_inbox()
-            self.assertEqual(html_after_one_review.count("data-ai-inbox-candidate-id="), 2)
-            self.assertNotIn(
-                f'data-ai-inbox-candidate-id="{first.id}"',
-                html_after_one_review,
+            self.assertEqual(
+                html_after_one_review.count("data-ai-inbox-document-id="), 2
             )
+            self.assertIn("1 AI-kandidat väntar", html_after_one_review)
+            self.assertNotIn("2 AI-kandidater väntar", html_after_one_review)
 
             app.review_ai_candidate_from_form(
                 second.id,
                 "decision=reject&rejection_reason=annat".encode("utf-8"),
             )
+            html_after_first_document_done = app.render_inbox()
+            self.assertEqual(
+                html_after_first_document_done.count("data-ai-inbox-document-id="), 1
+            )
+            self.assertNotIn(
+                f'data-ai-inbox-document-id="{first_document.id}"',
+                html_after_first_document_done,
+            )
+            self.assertIn(
+                f'data-ai-inbox-document-id="{second_document.id}"',
+                html_after_first_document_done,
+            )
+
             app.review_ai_candidate_from_form(third.id, b"decision=accept&content=Tre")
             restarted = Archive(Path(tmp) / "archive")
             restarted_app = CaptureApp(restarted)
             final_html = restarted_app.render_inbox()
-            self.assertEqual(final_html.count("data-ai-inbox-candidate-id="), 0)
+            self.assertEqual(final_html.count("data-ai-inbox-document-id="), 0)
 
     def test_document_groups_ai_candidates_by_semantic_type_order(self) -> None:
         with workspace_tempdir() as tmp:

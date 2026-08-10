@@ -85,7 +85,7 @@ class CaptureApp:
         if not rendered_documents:
             rendered_documents = "<p>Inga väntande documents.</p>"
         if not rendered_candidates:
-            rendered_candidates = "<p>Inga AI-kandidater väntar på review.</p>"
+            rendered_candidates = "<p>Inga documents har väntande AI-review.</p>"
 
         return self._page(
             title="Inbox",
@@ -97,7 +97,7 @@ class CaptureApp:
       {rendered_documents}
     </section>
     <section aria-labelledby="inbox-candidates">
-      <h2 id="inbox-candidates">AI-kandidater</h2>
+      <h2 id="inbox-candidates">AI-review</h2>
       {rendered_candidates}
     </section>
     <p><a href="/trash">Trash</a></p>
@@ -590,27 +590,46 @@ class CaptureApp:
 """
 
     def _render_ai_inbox_candidates(self, candidates: list[KnowledgeObject]) -> str:
-        rendered_items = "\n".join(
-            self._render_ai_inbox_candidate(candidate)
-            for candidate in self._sort_ai_candidates_for_review(candidates)
+        grouped = self._group_ai_candidates_by_document(candidates)
+        if not grouped:
+            return ""
+        summary = (
+            f"<p>{len(grouped)} document har obearbetade AI-granskningar.</p>"
         )
-        return rendered_items
+        rendered_items = "\n".join(
+            self._render_ai_inbox_document(document, pending_count)
+            for document, pending_count in grouped
+        )
+        return f"{summary}\n{rendered_items}"
 
-    def _render_ai_inbox_candidate(self, candidate: KnowledgeObject) -> str:
-        document_title = "Okänt document"
-        document_href = "/documents"
-        if candidate.document_id:
-            document = self.archive.get_document(candidate.document_id)
-            document_title = document.title
-            document_href = f"/documents/{escape(document.id)}"
-        snippet = candidate.original_content or candidate.content
-        if len(snippet) > 120:
-            snippet = f"{snippet[:117].rstrip()}..."
+    def _group_ai_candidates_by_document(
+        self, candidates: list[KnowledgeObject]
+    ) -> list[tuple[Document, int]]:
+        counts: dict[str, int] = {}
+        for candidate in candidates:
+            if not candidate.document_id:
+                continue
+            counts[candidate.document_id] = counts.get(candidate.document_id, 0) + 1
+        documents = [
+            (self.archive.get_document(document_id), pending_count)
+            for document_id, pending_count in counts.items()
+        ]
+        documents.sort(key=lambda item: item[0].title.casefold())
+        return documents
+
+    def _render_ai_inbox_document(
+        self, document: Document, pending_count: int
+    ) -> str:
+        document_href = f"/documents/{escape(document.id)}"
+        candidate_text = (
+            "1 AI-kandidat väntar"
+            if pending_count == 1
+            else f"{pending_count} AI-kandidater väntar"
+        )
         return f"""
-      <article data-ai-inbox-candidate-id="{escape(candidate.id)}">
-        <h3>{escape(candidate.semantic_type)} väntar</h3>
-        <p>Document: <a href="{document_href}">{escape(document_title)}</a></p>
-        <p>{escape(snippet)}</p>
+      <article data-ai-inbox-document-id="{escape(document.id)}">
+        <h3>{escape(document.title)}</h3>
+        <p>{candidate_text}</p>
         <p><a href="{document_href}">Granska</a></p>
       </article>
 """

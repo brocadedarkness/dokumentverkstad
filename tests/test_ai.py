@@ -306,7 +306,7 @@ class AiTests(unittest.TestCase):
 
             html = app.render_inbox()
 
-            self.assertIn("AI-kandidater", html)
+            self.assertIn("AI-review", html)
             self.assertIn("väntar", html)
             self.assertIn(f"/documents/{document.id}", html)
             self.assertNotIn("Proveniens: AI", html)

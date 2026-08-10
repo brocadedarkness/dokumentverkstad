@@ -229,8 +229,7 @@ På telefon är Inbox standardsidan.
 Exempel:
 
 * nytt Document
-* AI-genererad Summary
-* Candidate Insight
+* Document med väntande AI-review
 * projektförslag
 * saknad metadata
 * saknat sekretessbeslut
@@ -243,6 +242,8 @@ Version 1 behöver inte implementera alla dessa typer.
 ## Inbox-kort
 
 Varje objekt ska visa endast det som behövs för nästa beslut.
+
+AI-review i Inbox grupperas per Document. Ett Document med väntande AI-kandidater ska visas som en post med antal kandidater och länk till Document-vyn där review sker.
 
 Exempel för ett Document:
 

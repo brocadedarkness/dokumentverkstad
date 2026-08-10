@@ -168,8 +168,7 @@ Efter Iteration 6 kan Inbox visa:
 
 * nya Documents,
 * Documents markerade som senare,
-* AI-genererade kandidater som väntar på review,
-* AI-genererade kandidater som skjutits upp.
+* Documents som har AI-genererade kandidater som väntar på review eller har skjutits upp.
 
 För varje Document kan du:
 
@@ -181,9 +180,9 @@ För varje Document kan du:
 
 Inbox är inte en separat lagringsplats. Den visar Documents utifrån deras sparade status i Archive.
 
-För varje väntande AI-kandidat visar Inbox en egen post med kandidattyp, vilket Document kandidaten hör till, en kort identifiering och en länk för att granska kandidaten på Document-sidan.
+För AI-review visar Inbox en post per Document som har minst en väntande AI-kandidat. Posten visar Document-titel, antal väntande AI-kandidater och en länk för att granska dem på Document-sidan.
 
-AI-kandidater accepteras, redigeras, avvisas eller skjuts upp från Document-sidan, inte direkt från Inbox. När en AI-kandidat har behandlats försvinner dess Inbox-post automatiskt.
+AI-kandidater accepteras, redigeras, avvisas eller skjuts upp från Document-sidan, inte direkt från Inbox. När en kandidat har behandlats uppdateras antalet i Inbox. När inga kandidater längre väntar för ett Document försvinner Documentets AI-review-post automatiskt.
 
 Om Inbox saknar objekt visas ett tomt tillstånd.
 
@@ -341,7 +340,7 @@ Det som skickas till OpenAI är:
 
 Original-PDF skickas inte.
 
-AI-resultatet sparas som kandidater, inte som etablerad kunskap. Kandidaterna visas i Inbox som väntande poster som länkar till dokumentet.
+AI-resultatet sparas som kandidater, inte som etablerad kunskap. Inbox visar en AI-review-post per Document som har väntande kandidater och länkar till dokumentet.
 
 På Document-sidan visas väntande AI-kandidater grupperade i ordningen Summary, Claims, Insights, Questions och Project Suggestions. Där kan du acceptera, redigera och acceptera, skjuta upp eller avvisa varje kandidat. Vid avvisning kan du ange en frivillig avvisningsorsak.
 
