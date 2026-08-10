@@ -6,9 +6,12 @@ import unittest
 
 from dokumentverkstad.ai import (
     AiAnalysisResult,
+    AiRunRecord,
     AiProvider,
     AiProviderError,
     AiUsage,
+    AI_CAPABILITIES,
+    LONG_CONTEXT_INPUT_TOKEN_THRESHOLD,
     MockAiProvider,
     estimate_cost,
     estimate_input_tokens,
@@ -117,8 +120,42 @@ class AiTests(unittest.TestCase):
         estimate = estimate_cost(input_tokens=input_tokens, output_tokens=100)
 
         self.assertEqual(input_tokens, 100)
-        self.assertGreater(estimate.estimated_cost, 0)
+        self.assertEqual(estimate.estimated_cost, 0.00014)
         self.assertEqual(estimate.currency, "USD")
+        self.assertEqual(
+            estimate.method, "estimated_tokens_x_configured_price_short_context"
+        )
+
+    def test_cost_estimate_uses_long_context_prices_above_threshold(self) -> None:
+        estimate = estimate_cost(
+            input_tokens=LONG_CONTEXT_INPUT_TOKEN_THRESHOLD + 1,
+            output_tokens=100,
+        )
+
+        self.assertEqual(estimate.estimated_cost, 0.10898)
+        self.assertEqual(
+            estimate.method, "estimated_tokens_x_configured_price_long_context"
+        )
+
+    def test_completed_run_uses_same_pricing_logic_as_estimate(self) -> None:
+        planned = AiRunRecord.create(
+            document_id="doc_1",
+            provider="mock",
+            model="gpt-5.6-luna",
+            capabilities=AI_CAPABILITIES,
+            estimate=estimate_cost(input_tokens=10, output_tokens=10),
+        )
+        usage = AiUsage(
+            input_tokens=LONG_CONTEXT_INPUT_TOKEN_THRESHOLD + 1,
+            output_tokens=100,
+        )
+
+        completed = planned.completed(usage, candidate_ids=())
+
+        self.assertEqual(
+            completed.actual_cost,
+            estimate_cost(usage.input_tokens, usage.output_tokens).estimated_cost,
+        )
 
     def test_ai_does_not_run_without_explicit_confirmation(self) -> None:
         with workspace_tempdir() as tmp:

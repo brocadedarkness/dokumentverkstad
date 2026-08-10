@@ -13,6 +13,7 @@ DEFAULT_AI_PROVIDER = "openai"
 DEFAULT_AI_MODEL = "gpt-5.6-luna"
 DEFAULT_MAX_OUTPUT_TOKENS = 2000
 MAX_INPUT_TOKENS = 1_000_000
+LONG_CONTEXT_INPUT_TOKEN_THRESHOLD = 272_000
 AI_CAPABILITIES = (
     "summary",
     "candidate_insight",
@@ -24,13 +25,21 @@ AI_CAPABILITIES = (
 
 @dataclass(frozen=True)
 class ModelPricing:
-    input_per_million: float
-    output_per_million: float
+    short_input_per_million: float
+    short_output_per_million: float
+    long_input_per_million: float
+    long_output_per_million: float
+    long_context_input_token_threshold: int = LONG_CONTEXT_INPUT_TOKEN_THRESHOLD
     currency: str = "USD"
 
 
 MODEL_PRICING = {
-    DEFAULT_AI_MODEL: ModelPricing(input_per_million=1.0, output_per_million=6.0),
+    DEFAULT_AI_MODEL: ModelPricing(
+        short_input_per_million=0.20,
+        short_output_per_million=1.20,
+        long_input_per_million=0.40,
+        long_output_per_million=1.80,
+    ),
 }
 
 
@@ -337,17 +346,27 @@ def estimate_cost(
             currency="USD",
             method="unknown_model_price",
         )
-    cost = (
-        (input_tokens / 1_000_000) * pricing.input_per_million
-        + (output_tokens / 1_000_000) * pricing.output_per_million
+    input_price, output_price, context_tier = _prices_for_context(
+        pricing, input_tokens
     )
+    cost = (input_tokens / 1_000_000) * input_price + (
+        output_tokens / 1_000_000
+    ) * output_price
     return AiCost(
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         estimated_cost=round(cost, 6),
         currency=pricing.currency,
-        method="estimated_tokens_x_configured_price",
+        method=f"estimated_tokens_x_configured_price_{context_tier}_context",
     )
+
+
+def _prices_for_context(
+    pricing: ModelPricing, input_tokens: int
+) -> tuple[float, float, str]:
+    if input_tokens > pricing.long_context_input_token_threshold:
+        return pricing.long_input_per_million, pricing.long_output_per_million, "long"
+    return pricing.short_input_per_million, pricing.short_output_per_million, "short"
 
 
 def validate_document_size(input_tokens: int) -> None:
