@@ -346,7 +346,7 @@ På Document-sidan visas väntande AI-kandidater grupperade i ordningen Summary,
 
 Summary, Claims, Insights och Questions kan accepteras, redigeras och accepteras, skjutas upp eller avvisas. Vid avvisning kan du ange en frivillig avvisningsorsak.
 
-Project Suggestions är annorlunda. De är förslag om att koppla dokumentet till ett befintligt Project, inte kunskap som ska bli ett Knowledge Object. För dem kan du välja att koppla dokumentet till projektet eller avvisa förslaget. Om dokumentet redan är kopplat till det föreslagna projektet visas inte förslaget.
+Project Suggestions är annorlunda. De är förslag om att koppla dokumentet till ett befintligt Project, inte kunskap som ska bli ett Knowledge Object. För dem kan du välja att koppla dokumentet till projektet eller avvisa förslaget. Förslaget visas bara om det kan kopplas entydigt till ett befintligt Project. Om projektet är okänt, eller om dokumentet redan är kopplat till det föreslagna projektet, visas inte förslaget.
 
 När Summary, Claim, Insight eller Question accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen. Efter varje beslut återgår sidan till samma Document så att resten av AI-resultatet kan reviewas utan att lämna dokumentet.
 

@@ -8,6 +8,7 @@ import unittest
 
 from dokumentverkstad.ai import (
     AiAnalysisResult,
+    AiCandidate,
     AiRunRecord,
     AiProvider,
     AiProviderError,
@@ -58,6 +59,25 @@ class InvalidStructuredAiProvider(AiProvider):
                 output=[],
                 usage=SimpleNamespace(input_tokens=10, output_tokens=10),
             )
+        )
+
+
+class ProjectSuggestionProvider(AiProvider):
+    name = "mock"
+
+    def __init__(self, suggestion: AiCandidate):
+        self.suggestion = suggestion
+
+    def analyze_document(
+        self,
+        title: str,
+        text: str,
+        projects: tuple[tuple[str, str], ...],
+        model: str,
+    ) -> AiAnalysisResult:
+        return AiAnalysisResult(
+            candidates=(self.suggestion,),
+            usage=AiUsage(input_tokens=10, output_tokens=10),
         )
 
 
@@ -330,6 +350,50 @@ class AiTests(unittest.TestCase):
                 if candidate.semantic_type == "ProjectSuggestion"
             ]
             self.assertEqual(suggestions, [])
+
+    def test_project_suggestion_can_resolve_existing_project_by_name(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive, document = _archive_with_pdf_document(Path(tmp))
+            project = archive.create_project("Relevant projekt")
+            provider = ProjectSuggestionProvider(
+                AiCandidate(
+                    "project_suggestion",
+                    "Koppla dokumentet till Relevant projekt.",
+                    "medel",
+                    project_id="",
+                    project_name="Relevant projekt",
+                )
+            )
+            app = CaptureApp(archive, ai_provider=provider)
+
+            app.run_document_ai_analysis_from_form(document.id, b"confirm_ai=yes")
+
+            suggestions = [
+                candidate
+                for candidate in archive.list_ai_candidates_for_inbox()
+                if candidate.semantic_type == "ProjectSuggestion"
+            ]
+            self.assertEqual(len(suggestions), 1)
+            self.assertEqual(suggestions[0].project_ids, (project.id,))
+
+    def test_unknown_project_suggestion_is_not_saved_as_actionable_candidate(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive, document = _archive_with_pdf_document(Path(tmp))
+            archive.create_project("Relevant projekt")
+            provider = ProjectSuggestionProvider(
+                AiCandidate(
+                    "project_suggestion",
+                    "Koppla dokumentet till Okänt projekt.",
+                    "medel",
+                    project_id="missing_project",
+                    project_name="Okänt projekt",
+                )
+            )
+            app = CaptureApp(archive, ai_provider=provider)
+
+            app.run_document_ai_analysis_from_form(document.id, b"confirm_ai=yes")
+
+            self.assertEqual(archive.list_ai_candidates_for_inbox(), [])
 
     def test_ai_candidates_are_shown_in_inbox(self) -> None:
         with workspace_tempdir() as tmp:

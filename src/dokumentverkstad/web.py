@@ -461,21 +461,15 @@ class CaptureApp:
                     capability=candidate.capability,
                     document_id=document.id,
                     confidence=candidate.confidence,
-                    project_ids=(
-                        (candidate.project_id,)
-                        if candidate.capability == "project_suggestion"
-                        and candidate.project_id
-                        and candidate.project_id not in document.project_ids
-                        else ()
+                    project_ids=self._project_ids_for_ai_candidate(
+                        candidate, document, projects
                     ),
                     semantic_type=self._semantic_type_for_capability(
                         candidate.capability
                     ),
                 ).id
                 for candidate in result.candidates
-                if candidate.capability != "project_suggestion"
-                or not candidate.project_id
-                or candidate.project_id not in document.project_ids
+                if self._should_create_ai_candidate(candidate, document, projects)
             )
             completed = run.completed(result.usage, candidate_ids)
             self.archive.save_ai_run(completed)
@@ -708,14 +702,64 @@ class CaptureApp:
         if candidate.semantic_type != "ProjectSuggestion":
             return True
         if not candidate.project_ids:
-            return True
+            return False
         if document is None and candidate.document_id:
             document = self.archive.get_document(candidate.document_id)
         if document is None:
-            return True
+            return False
+        for project_id in candidate.project_ids:
+            try:
+                self.archive.get_project(project_id)
+            except FileNotFoundError:
+                return False
         return not any(
             project_id in document.project_ids for project_id in candidate.project_ids
         )
+
+    def _should_create_ai_candidate(
+        self,
+        candidate: object,
+        document: Document,
+        projects: tuple[tuple[str, str], ...],
+    ) -> bool:
+        if getattr(candidate, "capability", "") != "project_suggestion":
+            return True
+        return bool(self._project_ids_for_ai_candidate(candidate, document, projects))
+
+    def _project_ids_for_ai_candidate(
+        self,
+        candidate: object,
+        document: Document,
+        projects: tuple[tuple[str, str], ...],
+    ) -> tuple[str, ...]:
+        if getattr(candidate, "capability", "") != "project_suggestion":
+            return ()
+        project_id = self._resolve_project_suggestion(candidate, projects)
+        if not project_id or project_id in document.project_ids:
+            return ()
+        return (project_id,)
+
+    def _resolve_project_suggestion(
+        self, candidate: object, projects: tuple[tuple[str, str], ...]
+    ) -> str:
+        raw_project_id = str(getattr(candidate, "project_id", "")).strip()
+        project_ids = {project_id for project_id, _name in projects}
+        if raw_project_id in project_ids:
+            return raw_project_id
+
+        raw_project_name = (
+            str(getattr(candidate, "project_name", "")).strip().casefold()
+        )
+        if not raw_project_name:
+            return ""
+        matches = [
+            project_id
+            for project_id, project_name in projects
+            if project_name.casefold() == raw_project_name
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        return ""
 
     def _sort_ai_candidates_for_review(
         self, candidates: list[KnowledgeObject]

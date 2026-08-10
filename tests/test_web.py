@@ -404,10 +404,15 @@ class CaptureAppTests(unittest.TestCase):
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
             document = archive.create_document("AI-dokument")
+            project = archive.create_project("Relevant projekt")
             _create_ai_candidate(archive, document.id, "Question", "Fråga")
             _create_ai_candidate(archive, document.id, "Insight", "Insikt")
             _create_ai_candidate(
-                archive, document.id, "ProjectSuggestion", "Projektförslag"
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Projektförslag",
+                project_ids=(project.id,),
             )
             _create_ai_candidate(archive, document.id, "Summary", "Sammanfattning")
             _create_ai_candidate(archive, document.id, "Claim", "Påstående")
@@ -519,6 +524,28 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(
                 archive.get_document(document.id).project_ids, (project.id,)
             )
+
+    def test_project_suggestion_without_valid_project_is_not_actionable(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            suggestion = _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Koppla till ett okänt projekt.",
+            )
+            app = CaptureApp(archive)
+
+            document_html = app.render_document(document.id)
+            inbox_html = app.render_inbox()
+
+            self.assertNotIn(
+                f'data-ai-review-candidate-id="{suggestion.id}"',
+                document_html,
+            )
+            self.assertNotIn("Koppla till projekt", document_html)
+            self.assertNotIn(f'data-ai-inbox-document-id="{document.id}"', inbox_html)
 
     def test_render_capture_has_empty_field_and_recent_notes(self) -> None:
         with workspace_tempdir() as tmp:
