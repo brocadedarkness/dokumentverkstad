@@ -611,21 +611,28 @@ Iteration 7 är klar när följande scenario fungerar:
 
 ## Syfte
 
-Den sista iterationen handlar inte om en ny funktion.
+Iteration 8 handlar inte om ny kärnfunktionalitet.
 
-Den handlar om att systemet ska kunna användas varje dag utan att användaren behöver tänka på infrastrukturen.
+Den handlar om att Dokumentverkstad ska kunna användas varje dag utan att användaren behöver tänka på infrastrukturen, samtidigt som tjänsten och dess hemligheter skyddas på ett begripligt sätt.
+
+Dokumentverkstad ska vara stabil, återställningsbar och säker nog för kontinuerlig personlig användning.
 
 ## Arbetsflöde
 
-Dokumentverkstad körs kontinuerligt.
+Dokumentverkstad startas.
 
-Nya dokument registreras.
+Innan webbservern blir tillgänglig måste användaren ange ett adminlösenord.
 
-Inbox fylls.
+Adminlösenordet används för att låsa upp tjänsten och dekryptera lokalt lagrade secrets, exempelvis API-nycklar.
 
-Capture används.
+När tjänsten är upplåst:
 
-Projects utvecklas.
+* Dokumentverkstad körs kontinuerligt,
+* nya dokument kan tas emot,
+* Inbox fylls,
+* Capture används,
+* Projects utvecklas,
+* AI kan användas när credentials finns tillgängliga.
 
 Systemet blir en naturlig del av användarens arbete.
 
@@ -633,37 +640,140 @@ Systemet blir en naturlig del av användarens arbete.
 
 Denna iteration omfattar:
 
-- drift
-- CLI
-- backup
-- index rebuild
-- återställning
-- felsökning
+* kontinuerlig drift,
+* tjänstestart och avstängning,
+* adminautentisering vid start,
+* krypterad lokal secrets-lagring,
+* bakgrundsbevakning av Ingest Source,
+* backup,
+* återställning,
+* administrativa driftverktyg,
+* övervakning och felsökning.
+
+## Adminlösenord och upplåsning
+
+Dokumentverkstad ska inte starta sin webbserver förrän ett korrekt adminlösenord har angetts.
+
+Adminlösenordet ska:
+
+* aldrig lagras i klartext,
+* inte skrivas till logg,
+* inte sparas i Archive,
+* inte versionshanteras.
+
+Lösenordet används för att härleda en krypteringsnyckel som i sin tur används för att dekryptera lokala secrets.
+
+Fel lösenord ska inte starta tjänsten.
+
+Efter lyckad upplåsning hålls nödvändiga secrets endast i minnet under den aktuella körningen.
+
+När processen avslutas ska den dekrypterade informationen inte finnas kvar på disk.
+
+## Krypterad secrets-lagring
+
+API-nycklar och andra hemligheter ska kunna lagras krypterat lokalt.
+
+Exempel:
+
+```text
+.dokumentverkstad/
+    secrets.enc
+```
+
+Secrets-filen:
+
+* ligger utanför Archive,
+* versionshanteras aldrig,
+* får säkerhetskopieras endast om backupen hanteras som känslig information,
+* ska kunna ersättas utan att Archive eller övrig användardata påverkas.
+
+Använd en etablerad och välgranskad kryptografisk lösning.
+
+Bygg inte egen kryptografi.
+
+Lösenordsbaserad key derivation och authenticated encryption ska användas.
+
+## Återställning av credentials
+
+Om adminlösenordet glöms bort ska Dokumentverkstads Archive fortfarande vara intakt.
+
+Det ska vara möjligt att:
+
+* kassera den krypterade secrets-filen,
+* återkalla externa API-nycklar,
+* skapa nya credentials,
+* initiera secrets-lagringen på nytt.
+
+Förlust av adminlösenord ska alltså inte innebära förlust av dokument, Knowledge Objects eller Projects.
+
+## Kontinuerlig drift
+
+När Dokumentverkstad är upplåst ska den kunna köras under längre tid utan manuell hantering.
+
+Iteration 8 ska stödja:
+
+* stabil webbserverdrift,
+* automatisk hantering av nödvändiga lokala kataloger,
+* bakgrundsbevakning av Ingest Source,
+* tydlig felrapportering,
+* kontrollerad avstängning.
+
+Automatisk tjänstestart efter omboot utan mänsklig upplåsning ingår inte i denna iteration.
+
+Om detta senare behövs ska OS-baserad secrets-hantering, exempelvis Windows Credential Manager eller macOS Keychain, utvärderas separat.
+
+## Backup och återställning
+
+Iteration 8 ska etablera fungerande rutiner för backup och återställning.
+
+Archive är den auktoritativa datakällan.
+
+Det ska vara möjligt att:
+
+* säkerhetskopiera Archive,
+* återställa Archive till en ny installation,
+* återuppbygga Runtime och index,
+* fortsätta använda systemet efter återställning.
+
+Secrets ska hanteras separat från Archive.
 
 ## Implementation
 
-Iterationen implementerar:
+Iteration 8 implementerar eller härdar:
 
-- kontinuerlig drift
-- bakgrundsbevakning av Ingest Source
-- backup-rutiner
-- återställning av hela systemet
-- administrativa driftverktyg
-- övervakning och felsökning
+* startkommando för tjänsten,
+* adminlösenord vid start,
+* krypterad secrets-fil,
+* initiering och byte av credentials,
+* bakgrundsbevakning av Ingest Source,
+* administrativa driftkommandon,
+* backup-rutiner,
+* återställning av hela systemet,
+* robust index rebuild,
+* tydlig felsökning och loggning.
+
+Funktioner som redan finns, exempelvis Trash, Restore och index rebuild, ska inte implementeras på nytt utan göras robusta och administrerbara för daglig drift.
 
 ## Tester
 
 Iterationen är godkänd när:
 
-- systemet kan köras under längre tid
-- data aldrig förloras
-- hela systemet kan återställas från arkivet
+* tjänsten inte startar utan korrekt adminlösenord,
+* fel adminlösenord inte låser upp secrets,
+* secrets aldrig sparas i klartext,
+* secrets inte exponeras i loggar eller UI,
+* tjänsten kan köras utan dataförlust under längre tid,
+* Ingest Source kan bevakas i bakgrunden,
+* Archive kan säkerhetskopieras och återställas,
+* Runtime och index kan återskapas från återställt Archive,
+* förlust av secrets-filen inte påverkar Archive,
+* systemet kan återinitiera credentials utan att användardata förändras.
 
 ## Klart när
 
 Iteration 8 är klar när följande scenario fungerar:
 
-> Anders använder Dokumentverkstad som sitt dagliga arbetsverktyg. Han tänker sällan på hur systemet fungerar, utan använder det på samma självklara sätt som en programmerare använder sitt IDE.
+> Anders startar Dokumentverkstad, anger sitt adminlösenord och tjänsten låses upp. Därefter kan systemet köras under dagen utan att han behöver tänka på drift, index eller secrets. Om datorn går sönder kan Archive återställas på en ny installation, Runtime byggas upp igen och nya credentials konfigureras utan att kunskapsrummet går förlorat.
 
 # Iteration 9 – Konsolidering
 
