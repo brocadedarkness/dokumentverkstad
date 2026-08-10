@@ -80,9 +80,7 @@ class CaptureApp:
         rendered_documents = "\n".join(
             self._render_inbox_document(document) for document in documents
         )
-        rendered_candidates = "\n".join(
-            self._render_ai_candidate(candidate) for candidate in candidates
-        )
+        rendered_candidates = self._render_ai_candidate_groups(candidates)
         empty_notice = "<p>Inbox är tom.</p>" if not documents and not candidates else ""
         if not rendered_documents:
             rendered_documents = "<p>Inga väntande documents.</p>"
@@ -388,21 +386,22 @@ class CaptureApp:
             comment=form.get("comment", [""])[0],
         )
 
-    def review_ai_candidate_from_form(self, object_id: str, body: bytes) -> None:
+    def review_ai_candidate_from_form(self, object_id: str, body: bytes) -> KnowledgeObject:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
         decision = form.get("decision", [""])[0]
         content = form.get("content", [""])[0]
         rejection_reason = form.get("rejection_reason", [""])[0]
         if decision == "accept":
-            self.archive.review_knowledge_candidate(
+            return self.archive.review_knowledge_candidate(
                 object_id, "accepted", content=content
             )
-        elif decision == "later":
-            self.archive.review_knowledge_candidate(object_id, "later")
-        elif decision == "reject":
-            self.archive.review_knowledge_candidate(
+        if decision == "later":
+            return self.archive.review_knowledge_candidate(object_id, "later")
+        if decision == "reject":
+            return self.archive.review_knowledge_candidate(
                 object_id, "rejected", rejection_reason=rejection_reason
             )
+        raise ValueError("Unknown AI candidate review decision.")
 
     def run_document_ai_analysis_from_form(
         self, document_id: str, body: bytes
@@ -586,6 +585,33 @@ class CaptureApp:
         </form>
       </article>
 """
+
+    def _render_ai_candidate_groups(self, candidates: list[KnowledgeObject]) -> str:
+        groups = (
+            ("Summary", "Summary"),
+            ("Claims", "Claim"),
+            ("Insights", "Insight"),
+            ("Questions", "Question"),
+            ("Project Suggestions", "ProjectSuggestion"),
+        )
+        rendered_groups: list[str] = []
+        for heading, semantic_type in groups:
+            items = [
+                candidate
+                for candidate in candidates
+                if candidate.semantic_type == semantic_type
+            ]
+            if not items:
+                continue
+            rendered_groups.append(
+                f"""
+      <section aria-labelledby="ai-{escape(semantic_type)}">
+        <h3 id="ai-{escape(semantic_type)}">{escape(heading)}</h3>
+        {"".join(self._render_ai_candidate(candidate) for candidate in items)}
+      </section>
+"""
+            )
+        return "\n".join(rendered_groups)
 
     def _render_ai_candidate(self, candidate: KnowledgeObject) -> str:
         rejection_options = "\n".join(
@@ -935,9 +961,14 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
 
             if parsed.path.startswith("/inbox/candidates/"):
                 object_id = unquote(parsed.path.removeprefix("/inbox/candidates/"))
-                app.review_ai_candidate_from_form(object_id, body)
+                candidate = app.review_ai_candidate_from_form(object_id, body)
+                location = (
+                    f"/documents/{candidate.document_id}"
+                    if candidate.document_id
+                    else "/inbox"
+                )
                 self.send_response(HTTPStatus.SEE_OTHER)
-                self.send_header("Location", f"/documents/{document_id}")
+                self.send_header("Location", location)
                 self.end_headers()
                 return
 

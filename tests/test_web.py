@@ -172,6 +172,106 @@ class CaptureAppTests(unittest.TestCase):
 
             self.assertEqual(archive.get_document(document.id).inbox_status, "new")
 
+    def test_ai_candidate_review_actions_return_http_response_and_persist(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            candidates = {
+                "summary": _create_ai_candidate(
+                    archive, document.id, "Summary", "Ursprunglig summary"
+                ),
+                "claim": _create_ai_candidate(
+                    archive, document.id, "Claim", "Ursprungligt claim"
+                ),
+                "insight": _create_ai_candidate(
+                    archive, document.id, "Insight", "Ursprunglig insight"
+                ),
+                "question": _create_ai_candidate(
+                    archive, document.id, "Question", "Ursprunglig question"
+                ),
+                "project": _create_ai_candidate(
+                    archive,
+                    document.id,
+                    "ProjectSuggestion",
+                    "Ursprungligt projektförslag",
+                ),
+            }
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                requests = (
+                    (
+                        candidates["summary"].id,
+                        "decision=accept&content=Redigerad+summary",
+                    ),
+                    (
+                        candidates["claim"].id,
+                        "decision=accept&content=Ursprungligt+claim",
+                    ),
+                    (
+                        candidates["insight"].id,
+                        "decision=reject&rejection_reason=felaktig",
+                    ),
+                    (candidates["question"].id, "decision=later"),
+                    (
+                        candidates["project"].id,
+                        "decision=accept&content=Ursprungligt+projektf%C3%B6rslag",
+                    ),
+                )
+                for candidate_id, body in requests:
+                    status, location = _post(
+                        server, f"/inbox/candidates/{candidate_id}", body
+                    )
+                    self.assertEqual(status, 303)
+                    self.assertEqual(location, f"/documents/{document.id}")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            summary = archive.get_knowledge_object(candidates["summary"].id)
+            claim = archive.get_knowledge_object(candidates["claim"].id)
+            insight = archive.get_knowledge_object(candidates["insight"].id)
+            question = archive.get_knowledge_object(candidates["question"].id)
+            project = archive.get_knowledge_object(candidates["project"].id)
+
+            self.assertEqual(summary.review_status, "accepted")
+            self.assertEqual(summary.content, "Redigerad summary")
+            self.assertEqual(summary.creator, "user_after_ai")
+            self.assertEqual(summary.original_content, "Ursprunglig summary")
+            self.assertEqual(summary.accepted_content, "Redigerad summary")
+            self.assertEqual(claim.review_status, "accepted")
+            self.assertEqual(insight.review_status, "rejected")
+            self.assertEqual(insight.rejection_reason, "felaktig")
+            self.assertEqual(question.review_status, "later")
+            self.assertEqual(project.review_status, "accepted")
+
+    def test_inbox_groups_ai_candidates_by_semantic_type_order(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            _create_ai_candidate(archive, document.id, "Question", "Fråga")
+            _create_ai_candidate(archive, document.id, "Insight", "Insikt")
+            _create_ai_candidate(
+                archive, document.id, "ProjectSuggestion", "Projektförslag"
+            )
+            _create_ai_candidate(archive, document.id, "Summary", "Sammanfattning")
+            _create_ai_candidate(archive, document.id, "Claim", "Påstående")
+            app = CaptureApp(archive)
+
+            html = app.render_inbox()
+
+            positions = [
+                html.index('id="ai-Summary"'),
+                html.index('id="ai-Claim"'),
+                html.index('id="ai-Insight"'),
+                html.index('id="ai-Question"'),
+                html.index('id="ai-ProjectSuggestion"'),
+            ]
+            self.assertEqual(positions, sorted(positions))
+
     def test_render_capture_has_empty_field_and_recent_notes(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -393,6 +493,22 @@ class CaptureAppTests(unittest.TestCase):
             loaded = archive.get_relation(relation_files[0].parent.name)
             self.assertEqual(loaded.relation_type, "hör ihop med")
             self.assertEqual(loaded.comment, "Samma tema")
+
+
+def _create_ai_candidate(
+    archive: Archive, document_id: str, semantic_type: str, content: str
+):
+    return archive.create_ai_candidate(
+        content=content,
+        ai_run_id="airun_test",
+        ai_provider="mock",
+        ai_model="mock-model",
+        prompt_version="test",
+        capability=semantic_type,
+        document_id=document_id,
+        confidence="medel",
+        semantic_type=semantic_type,
+    )
 
 
 if __name__ == "__main__":
