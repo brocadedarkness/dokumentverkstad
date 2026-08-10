@@ -612,3 +612,5 @@ Document fördjupar förståelsen av en källa.
 Project hjälper användaren att orientera sig i och syntetisera ett kunskapsområde.
 
 Gränssnittet ska minimera avbrott och låta användaren fortsätta arbeta med så liten friktion som möjligt.
+
+Interaktion optimeras efter att arbetsflödet är komplett.
