@@ -387,6 +387,9 @@ class CaptureApp:
         )
 
     def review_ai_candidate_from_form(self, object_id: str, body: bytes) -> KnowledgeObject:
+        candidate = self.archive.get_knowledge_object(object_id)
+        if candidate.review_status not in {"candidate", "later"}:
+            raise ValueError("AI candidate has already been reviewed.")
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
         decision = form.get("decision", [""])[0]
         content = form.get("content", [""])[0]
@@ -961,14 +964,13 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
 
             if parsed.path.startswith("/inbox/candidates/"):
                 object_id = unquote(parsed.path.removeprefix("/inbox/candidates/"))
-                candidate = app.review_ai_candidate_from_form(object_id, body)
-                location = (
-                    f"/documents/{candidate.document_id}"
-                    if candidate.document_id
-                    else "/inbox"
-                )
+                try:
+                    app.review_ai_candidate_from_form(object_id, body)
+                except ValueError as error:
+                    self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
                 self.send_response(HTTPStatus.SEE_OTHER)
-                self.send_header("Location", location)
+                self.send_header("Location", "/inbox")
                 self.end_headers()
                 return
 

@@ -225,7 +225,7 @@ class CaptureAppTests(unittest.TestCase):
                         server, f"/inbox/candidates/{candidate_id}", body
                     )
                     self.assertEqual(status, 303)
-                    self.assertEqual(location, f"/documents/{document.id}")
+                    self.assertEqual(location, "/inbox")
             finally:
                 server.shutdown()
                 server.server_close()
@@ -247,6 +247,80 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(insight.rejection_reason, "felaktig")
             self.assertEqual(question.review_status, "later")
             self.assertEqual(project.review_status, "accepted")
+
+    def test_ai_review_can_continue_after_summary_without_read_only_detour(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            summary = _create_ai_candidate(
+                archive, document.id, "Summary", "Sammanfattning"
+            )
+            first_claim = _create_ai_candidate(
+                archive, document.id, "Claim", "Första claim"
+            )
+            second_claim = _create_ai_candidate(
+                archive, document.id, "Claim", "Andra claim"
+            )
+            insight = _create_ai_candidate(archive, document.id, "Insight", "Insikt")
+            question = _create_ai_candidate(archive, document.id, "Question", "Fråga")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, location = _post(
+                    server,
+                    f"/inbox/candidates/{summary.id}",
+                    "decision=accept&content=Sammanfattning",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, "/inbox")
+
+                html = _get(server, "/inbox")
+                self.assertNotIn(f'action="/inbox/candidates/{summary.id}"', html)
+                for candidate in (first_claim, second_claim, insight, question):
+                    self.assertIn(
+                        f'action="/inbox/candidates/{candidate.id}"', html
+                    )
+                self.assertLess(html.index("Claims"), html.index("Insights"))
+
+                for claim in (first_claim, second_claim):
+                    status, location = _post(
+                        server,
+                        f"/inbox/candidates/{claim.id}",
+                        f"decision=accept&content={claim.content.replace(' ', '+')}",
+                    )
+                    self.assertEqual(status, 303)
+                    self.assertEqual(location, "/inbox")
+
+                status, location = _post(
+                    server,
+                    f"/inbox/candidates/{insight.id}",
+                    "decision=later",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, "/inbox")
+
+                status, _ = _post(
+                    server,
+                    f"/inbox/candidates/{summary.id}",
+                    "decision=reject&rejection_reason=annat",
+                )
+                self.assertEqual(status, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(archive.get_knowledge_object(summary.id).review_status, "accepted")
+            self.assertEqual(
+                archive.get_knowledge_object(first_claim.id).review_status, "accepted"
+            )
+            self.assertEqual(
+                archive.get_knowledge_object(second_claim.id).review_status, "accepted"
+            )
+            self.assertEqual(archive.get_knowledge_object(insight.id).review_status, "later")
+            self.assertEqual(archive.get_knowledge_object(question.id).review_status, "candidate")
 
     def test_inbox_groups_ai_candidates_by_semantic_type_order(self) -> None:
         with workspace_tempdir() as tmp:
