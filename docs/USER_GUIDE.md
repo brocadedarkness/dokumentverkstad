@@ -342,9 +342,13 @@ Original-PDF skickas inte.
 
 AI-resultatet sparas som kandidater, inte som etablerad kunskap. Inbox visar en AI-review-post per Document som har väntande kandidater och länkar till dokumentet.
 
-På Document-sidan visas väntande AI-kandidater grupperade i ordningen Summary, Claims, Insights, Questions och Project Suggestions. Där kan du acceptera, redigera och acceptera, skjuta upp eller avvisa varje kandidat. Vid avvisning kan du ange en frivillig avvisningsorsak.
+På Document-sidan visas väntande AI-kandidater grupperade i ordningen Summary, Claims, Insights, Questions och Project Suggestions.
 
-När en AI-kandidat accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen. Efter varje beslut återgår sidan till samma Document så att resten av AI-resultatet kan reviewas utan att lämna dokumentet.
+Summary, Claims, Insights och Questions kan accepteras, redigeras och accepteras, skjutas upp eller avvisas. Vid avvisning kan du ange en frivillig avvisningsorsak.
+
+Project Suggestions är annorlunda. De är förslag om att koppla dokumentet till ett befintligt Project, inte kunskap som ska bli ett Knowledge Object. För dem kan du välja att koppla dokumentet till projektet eller avvisa förslaget. Om dokumentet redan är kopplat till det föreslagna projektet visas inte förslaget.
+
+När Summary, Claim, Insight eller Question accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen. Efter varje beslut återgår sidan till samma Document så att resten av AI-resultatet kan reviewas utan att lämna dokumentet.
 
 Efter körningen sparas en AI-körning i Archive med:
 

@@ -222,7 +222,13 @@ class KnowledgeObject:
         self, review_status: str, content: str | None = None, rejection_reason: str = ""
     ) -> "KnowledgeObject":
         clean_status = review_status.strip()
-        if clean_status not in {"candidate", "accepted", "later", "rejected"}:
+        if clean_status not in {
+            "candidate",
+            "accepted",
+            "later",
+            "rejected",
+            "handled",
+        }:
             raise ValueError("Unknown Knowledge Object review status.")
         clean_content = self.content if content is None else content.strip()
         if not clean_content:

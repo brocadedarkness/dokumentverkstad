@@ -76,7 +76,7 @@ class CaptureApp:
 
     def render_inbox(self) -> str:
         documents = self.archive.list_inbox_documents()
-        candidates = self.archive.list_ai_candidates_for_inbox()
+        candidates = self._visible_ai_candidates_for_inbox()
         rendered_documents = "\n".join(
             self._render_inbox_document(document) for document in documents
         )
@@ -161,11 +161,7 @@ class CaptureApp:
     def render_document(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
         notes = self.archive.list_knowledge_objects_for_document(document.id)
-        candidates = [
-            candidate
-            for candidate in self.archive.list_ai_candidates_for_inbox()
-            if candidate.document_id == document.id
-        ]
+        candidates = self._visible_ai_candidates_for_document(document)
         runs = self.archive.list_ai_runs_for_document(document.id)
         linked_projects = [
             project
@@ -394,6 +390,24 @@ class CaptureApp:
         decision = form.get("decision", [""])[0]
         content = form.get("content", [""])[0]
         rejection_reason = form.get("rejection_reason", [""])[0]
+        if candidate.semantic_type == "ProjectSuggestion":
+            if decision == "link_project":
+                project_id = candidate.project_ids[0] if candidate.project_ids else ""
+                if not project_id:
+                    raise ValueError("Project suggestion has no project.")
+                self.archive.get_project(project_id)
+                document = self.archive.get_document(candidate.document_id)
+                self.archive.set_document_projects(
+                    document.id, (*document.project_ids, project_id)
+                )
+                return self.archive.review_knowledge_candidate(
+                    object_id, "handled", content=candidate.content
+                )
+            if decision == "reject":
+                return self.archive.review_knowledge_candidate(
+                    object_id, "rejected", rejection_reason=rejection_reason
+                )
+            raise ValueError("Unknown project suggestion review decision.")
         if decision == "accept":
             return self.archive.review_knowledge_candidate(
                 object_id, "accepted", content=content
@@ -447,11 +461,21 @@ class CaptureApp:
                     capability=candidate.capability,
                     document_id=document.id,
                     confidence=candidate.confidence,
+                    project_ids=(
+                        (candidate.project_id,)
+                        if candidate.capability == "project_suggestion"
+                        and candidate.project_id
+                        and candidate.project_id not in document.project_ids
+                        else ()
+                    ),
                     semantic_type=self._semantic_type_for_capability(
                         candidate.capability
                     ),
                 ).id
                 for candidate in result.candidates
+                if candidate.capability != "project_suggestion"
+                or not candidate.project_id
+                or candidate.project_id not in document.project_ids
             )
             completed = run.completed(result.usage, candidate_ids)
             self.archive.save_ai_run(completed)
@@ -661,6 +685,38 @@ class CaptureApp:
             )
         return "\n".join(rendered_groups)
 
+    def _visible_ai_candidates_for_inbox(self) -> list[KnowledgeObject]:
+        return [
+            candidate
+            for candidate in self.archive.list_ai_candidates_for_inbox()
+            if self._ai_candidate_should_be_visible(candidate)
+        ]
+
+    def _visible_ai_candidates_for_document(
+        self, document: Document
+    ) -> list[KnowledgeObject]:
+        return [
+            candidate
+            for candidate in self.archive.list_ai_candidates_for_inbox()
+            if candidate.document_id == document.id
+            and self._ai_candidate_should_be_visible(candidate, document=document)
+        ]
+
+    def _ai_candidate_should_be_visible(
+        self, candidate: KnowledgeObject, document: Document | None = None
+    ) -> bool:
+        if candidate.semantic_type != "ProjectSuggestion":
+            return True
+        if not candidate.project_ids:
+            return True
+        if document is None and candidate.document_id:
+            document = self.archive.get_document(candidate.document_id)
+        if document is None:
+            return True
+        return not any(
+            project_id in document.project_ids for project_id in candidate.project_ids
+        )
+
     def _sort_ai_candidates_for_review(
         self, candidates: list[KnowledgeObject]
     ) -> list[KnowledgeObject]:
@@ -681,6 +737,8 @@ class CaptureApp:
         )
 
     def _render_ai_candidate(self, candidate: KnowledgeObject) -> str:
+        if candidate.semantic_type == "ProjectSuggestion":
+            return self._render_project_suggestion_candidate(candidate)
         rejection_options = "\n".join(
             f"<option value=\"{escape(reason)}\">{escape(reason)}</option>"
             for reason in (
@@ -725,6 +783,35 @@ class CaptureApp:
           </select>
           <button name="decision" type="submit" value="accept">Acceptera</button>
           <button name="decision" type="submit" value="later">Senare</button>
+          <button name="decision" type="submit" value="reject">Avvisa</button>
+        </form>
+      </article>
+"""
+
+    def _render_project_suggestion_candidate(self, candidate: KnowledgeObject) -> str:
+        project_name = "Okänt project"
+        project_id = candidate.project_ids[0] if candidate.project_ids else ""
+        if project_id:
+            project = self.archive.get_project(project_id)
+            project_name = project.name
+        confidence = (
+            f"<p>Confidence: {escape(candidate.confidence)}</p>"
+            if candidate.confidence
+            else ""
+        )
+        provenance = (
+            f"{escape(candidate.ai_provider)} / {escape(candidate.ai_model)} / "
+            f"{escape(candidate.prompt_version)}"
+        )
+        return f"""
+      <article data-ai-review-candidate-id="{escape(candidate.id)}">
+        <h3>{escape(candidate.semantic_type)}</h3>
+        <p>Föreslaget project: {escape(project_name)}</p>
+        <p>{escape(candidate.original_content or candidate.content)}</p>
+        {confidence}
+        <p>Proveniens: AI - {provenance}</p>
+        <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
+          <button name="decision" type="submit" value="link_project">Koppla till projekt</button>
           <button name="decision" type="submit" value="reject">Avvisa</button>
         </form>
       </article>

@@ -298,6 +298,39 @@ class AiTests(unittest.TestCase):
             self.assertEqual(candidates[0].ai_provider, "mock")
             self.assertEqual(candidates[0].document_id, document.id)
 
+    def test_project_suggestions_keep_project_id_and_skip_existing_links(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive, document = _archive_with_pdf_document(Path(tmp))
+            project = archive.create_project("Relevant projekt")
+            app = CaptureApp(archive, ai_provider=MockAiProvider())
+
+            app.run_document_ai_analysis_from_form(document.id, b"confirm_ai=yes")
+
+            candidates = archive.list_ai_candidates_for_inbox()
+            suggestions = [
+                candidate
+                for candidate in candidates
+                if candidate.semantic_type == "ProjectSuggestion"
+            ]
+            self.assertEqual(len(suggestions), 1)
+            self.assertEqual(suggestions[0].project_ids, (project.id,))
+
+        with workspace_tempdir() as tmp:
+            archive, document = _archive_with_pdf_document(Path(tmp))
+            project = archive.create_project("Relevant projekt")
+            archive.set_document_projects(document.id, (project.id,))
+            app = CaptureApp(archive, ai_provider=MockAiProvider())
+
+            app.run_document_ai_analysis_from_form(document.id, b"confirm_ai=yes")
+
+            candidates = archive.list_ai_candidates_for_inbox()
+            suggestions = [
+                candidate
+                for candidate in candidates
+                if candidate.semantic_type == "ProjectSuggestion"
+            ]
+            self.assertEqual(suggestions, [])
+
     def test_ai_candidates_are_shown_in_inbox(self) -> None:
         with workspace_tempdir() as tmp:
             archive, document = _archive_with_pdf_document(Path(tmp))

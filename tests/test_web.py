@@ -177,6 +177,7 @@ class CaptureAppTests(unittest.TestCase):
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
             document = archive.create_document("AI-dokument")
+            suggested_project = archive.create_project("Föreslaget projekt")
             candidates = {
                 "summary": _create_ai_candidate(
                     archive, document.id, "Summary", "Ursprunglig summary"
@@ -195,6 +196,7 @@ class CaptureAppTests(unittest.TestCase):
                     document.id,
                     "ProjectSuggestion",
                     "Ursprungligt projektförslag",
+                    project_ids=(suggested_project.id,),
                 ),
             }
             app = CaptureApp(archive)
@@ -218,7 +220,7 @@ class CaptureAppTests(unittest.TestCase):
                     (candidates["question"].id, "decision=later"),
                     (
                         candidates["project"].id,
-                        "decision=accept&content=Ursprungligt+projektf%C3%B6rslag",
+                        "decision=link_project",
                     ),
                 )
                 for candidate_id, body in requests:
@@ -238,7 +240,7 @@ class CaptureAppTests(unittest.TestCase):
             claim = archive.get_knowledge_object(candidates["claim"].id)
             insight = archive.get_knowledge_object(candidates["insight"].id)
             question = archive.get_knowledge_object(candidates["question"].id)
-            project = archive.get_knowledge_object(candidates["project"].id)
+            project_suggestion = archive.get_knowledge_object(candidates["project"].id)
 
             self.assertEqual(summary.review_status, "accepted")
             self.assertEqual(summary.content, "Redigerad summary")
@@ -249,7 +251,11 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(insight.review_status, "rejected")
             self.assertEqual(insight.rejection_reason, "felaktig")
             self.assertEqual(question.review_status, "later")
-            self.assertEqual(project.review_status, "accepted")
+            self.assertEqual(project_suggestion.review_status, "handled")
+            self.assertEqual(
+                archive.get_document(document.id).project_ids,
+                (suggested_project.id,),
+            )
 
     def test_ai_review_can_continue_after_summary_without_read_only_detour(self) -> None:
         with workspace_tempdir() as tmp:
@@ -417,6 +423,102 @@ class CaptureAppTests(unittest.TestCase):
                 html.index('id="ai-ProjectSuggestion"'),
             ]
             self.assertEqual(positions, sorted(positions))
+
+    def test_project_suggestion_can_link_document_without_creating_accepted_knowledge(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            project = archive.create_project("Relevant projekt")
+            suggestion = _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Koppla till Relevant projekt.",
+                project_ids=(project.id,),
+            )
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                html = _get(server, f"/documents/{document.id}")
+                self.assertIn("Koppla till projekt", html)
+                self.assertIn("Avvisa", html)
+                self.assertNotIn("Acceptera", html)
+                self.assertNotIn("Senare", html)
+
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/candidates/{suggestion.id}",
+                    "decision=link_project",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, f"/documents/{document.id}")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            reviewed = archive.get_knowledge_object(suggestion.id)
+            self.assertEqual(reviewed.review_status, "handled")
+            self.assertEqual(archive.get_document(document.id).project_ids, (project.id,))
+            self.assertEqual(archive.list_knowledge_objects_for_document(document.id), [])
+
+    def test_project_suggestion_reject_does_not_link_project(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            project = archive.create_project("Relevant projekt")
+            suggestion = _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Koppla till Relevant projekt.",
+                project_ids=(project.id,),
+            )
+            app = CaptureApp(archive)
+
+            app.review_ai_candidate_from_form(
+                suggestion.id,
+                "decision=reject&rejection_reason=annat".encode("utf-8"),
+            )
+
+            reviewed = archive.get_knowledge_object(suggestion.id)
+            self.assertEqual(reviewed.review_status, "rejected")
+            self.assertEqual(archive.get_document(document.id).project_ids, ())
+
+    def test_existing_project_link_hides_project_suggestion_and_not_duplicate_link(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI-dokument")
+            project = archive.create_project("Relevant projekt")
+            archive.set_document_projects(document.id, (project.id,))
+            suggestion = _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Koppla till Relevant projekt.",
+                project_ids=(project.id,),
+            )
+            app = CaptureApp(archive)
+
+            document_html = app.render_document(document.id)
+            inbox_html = app.render_inbox()
+            self.assertNotIn(
+                f'data-ai-review-candidate-id="{suggestion.id}"',
+                document_html,
+            )
+            self.assertNotIn(f'data-ai-inbox-document-id="{document.id}"', inbox_html)
+
+            reviewed = app.review_ai_candidate_from_form(
+                suggestion.id,
+                "decision=link_project".encode("utf-8"),
+            )
+
+            self.assertEqual(reviewed.review_status, "handled")
+            self.assertEqual(
+                archive.get_document(document.id).project_ids, (project.id,)
+            )
 
     def test_render_capture_has_empty_field_and_recent_notes(self) -> None:
         with workspace_tempdir() as tmp:
@@ -642,7 +744,11 @@ class CaptureAppTests(unittest.TestCase):
 
 
 def _create_ai_candidate(
-    archive: Archive, document_id: str, semantic_type: str, content: str
+    archive: Archive,
+    document_id: str,
+    semantic_type: str,
+    content: str,
+    project_ids: tuple[str, ...] = (),
 ):
     return archive.create_ai_candidate(
         content=content,
@@ -653,6 +759,7 @@ def _create_ai_candidate(
         capability=semantic_type,
         document_id=document_id,
         confidence="medel",
+        project_ids=project_ids,
         semantic_type=semantic_type,
     )
 
