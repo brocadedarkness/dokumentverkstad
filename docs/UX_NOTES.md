@@ -248,3 +248,139 @@ Det är möjligt att den visar sig värdefull senare, men i nuvarande arbetsflö
 ### Fråga
 
 Behöver explicita relationer mellan Knowledge Objects finnas i användargränssnittet redan från början, eller bör de tills vidare betraktas som en avancerad funktion tills ett tydligare användningsfall har vuxit fram?
+
+# 2026-08-11
+
+## Capture
+
+### Capture bör kunna användas utan att lämna läsningen
+
+När jag läser exempelvis AI:s Summary eller ett dokument vill jag kunna skriva nya Captures utan att behöva scrolla bort från det jag läser.
+
+Capture behöver därför kunna vara tillgänglig samtidigt som innehållet visas.
+
+Detta är framför allt ett arbetsflödesproblem snarare än en layoutfråga.
+
+---
+
+## Document
+
+### Utgivningsår är viktig metadata
+
+Dokumentets utgivningsår behövs för att kunna bedöma:
+
+* om slutsatser fortfarande är aktuella,
+* i vilken historisk kontext dokumentet ska förstås.
+
+Årtal bör därför betraktas som central metadata.
+
+---
+
+### Metadatahanteringen behöver utvecklas
+
+Dokument bör innehålla mer metadata än idag.
+
+Två typer av metadata behöver stödjas:
+
+* metadata som kan extraheras automatiskt ur PDF-filen,
+* metadata som användaren kan komplettera manuellt.
+
+Exempel är:
+
+* titel,
+* upphov (författare eller organisation),
+* utgivningsår,
+* eventuellt andra bibliografiska uppgifter, t.ex. DOI och ISBN
+
+---
+
+### Metadata bör kunna extraheras från filnamn
+
+Mitt nuvarande dokumentarkiv följer i hög grad mönstret:
+
+```text
+ÅÅÅÅ Titel.pdf
+```
+
+eller motsvarande.
+
+Det borde därför vara möjligt att automatiskt extrahera åtminstone:
+
+* utgivningsår,
+* titel,
+
+från filnamnet när PDF-metadata saknas eller är bristfällig.
+
+---
+
+### Document-listan behöver visa mer arbetsinformation
+
+I listan över Documents vore det värdefullt att direkt kunna se exempelvis:
+
+* om dokumentet har AI-analyserats,
+* hur många Knowledge Objects/Captures som är kopplade till dokumentet.
+
+Det gör det lättare att få en överblick över vilka dokument som redan bearbetats.
+
+---
+
+## AI-review
+
+### Felaktiga review-beslut måste kunna rättas
+
+Jag råkade acceptera en AI-Claim som egentligen borde ha avvisats.
+
+Review behöver därför kunna ändras i efterhand.
+
+Det gäller inte bara Accept/Reject utan hela review-historiken.
+
+---
+
+### AI-frågor kan stödja manuell läsning
+
+De Questions som AI föreslår kan fungera som vägledning vid en snabb manuell genomläsning av dokumentet.
+
+Det behöver dock vara tydligt att frågorna är AI:s frågor och inte nödvändigtvis besvaras av dokumentet.
+
+---
+
+### Hantering av stora AI-svar
+
+När AI-analysen avbryts därför att max_output_tokens överskrids bör användaren kunna välja att fortsätta med en högre gräns.
+
+Systemet bör då:
+
+* göra en ny kostnadsuppskattning,
+* visa denna,
+* låta användaren ta ställning innan ett nytt anrop görs.
+
+---
+
+## Knowledge Objects
+
+### Interna ID behöver inte exponeras
+
+Knowledge Object-ID:n tillför inget i det dagliga arbetet.
+
+Interna identifierare bör därför inte visas i användargränssnittet annat än i administrativa eller tekniska sammanhang.
+
+---
+
+## Framtida arkitektur
+
+### Extern AI via MCP
+
+Fördjupade AI-samtal bör sannolikt inte ske inne i Dokumentverkstad.
+
+Istället kan Dokumentverkstad på sikt exponera ett säkert read-only-gränssnitt, exempelvis via MCP.
+
+Det gör det möjligt för externa AI-klienter att:
+
+* läsa Documents,
+* läsa Knowledge Objects,
+* söka i kunskapsrummet,
+* resonera kring materialet,
+
+utan att själva AI-konversationen behöver lagras i Dokumentverkstad.
+
+Detta känns som en möjlig framtida Iteration 10: **Exponera kunskapsrummet**.
