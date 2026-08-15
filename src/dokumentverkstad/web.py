@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from html import escape as _html_escape
+from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-import re
 from time import perf_counter
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
@@ -38,30 +37,6 @@ from .statistics import (
     UsageSummary,
     build_ai_statistics,
 )
-
-
-def escape(value: object, quote: bool = True) -> str:
-    return _html_escape(_repair_mojibake(str(value)), quote=quote)
-
-
-def _repair_mojibake(value: str) -> str:
-    return re.sub(r"\S*(?:Ã|Â|â)\S*", _repair_mojibake_token, value)
-
-
-def _repair_mojibake_token(match: re.Match[str]) -> str:
-    repaired = match.group(0)
-    for _ in range(3):
-        if not any(marker in repaired for marker in ("Ã", "Â", "â")):
-            break
-        try:
-            candidate = repaired.encode("latin-1").decode("utf-8")
-        except UnicodeError:
-            break
-        if candidate == repaired:
-            break
-        repaired = candidate
-    return repaired
-
 
 class CaptureApp:
     def __init__(
@@ -229,7 +204,7 @@ class CaptureApp:
       <input id="title" name="title" type="text" required>
       <label for="author">Upphov</label>
       <input id="author" name="author" type="text">
-      <label for="year">UtgivningsÃ¥r</label>
+      <label for="year">Utgivningsår</label>
       <input id="year" name="year" type="text" inputmode="numeric" pattern="\\d{{4}}">
       <button type="submit">Skapa document</button>
     </form>
@@ -270,9 +245,9 @@ class CaptureApp:
     <h1>{escape(document.title)}</h1>
     <dl>
       <dt>Upphov</dt>
-      <dd>{escape(document.author or "OkÃ¤nt")}</dd>
-      <dt>UtgivningsÃ¥r</dt>
-      <dd>{escape(document.year or "OkÃ¤nt")}</dd>
+      <dd>{escape(document.author or "Okänt")}</dd>
+      <dt>Utgivningsår</dt>
+      <dd>{escape(document.year or "Okänt")}</dd>
       <dt>Originalfil</dt>
       <dd>{original_file}</dd>
       <dt>Projects</dt>
@@ -636,9 +611,9 @@ class CaptureApp:
             body=f"""
     <h1>Redigera capture</h1>
     <form method="post" action="/knowledge/{escape(note.id)}">
-      <label for="content">InnehÃ¥ll</label>
+      <label for="content">Innehåll</label>
       <textarea id="content" name="content" required>{escape(note.content)}</textarea>
-      <label for="source_location">KÃ¤llposition</label>
+      <label for="source_location">Källposition</label>
       <input id="source_location" name="source_location" type="text" value="{escape(note.source_location)}">
       <button type="submit">Spara</button>
     </form>
@@ -703,17 +678,17 @@ class CaptureApp:
             f"{field}: {source}" for field, source in sorted(sources.items())
         )
         if not metadata_source:
-            metadata_source = "Ingen sparad kÃ¤llinformation."
+            metadata_source = "Ingen sparad källinformation."
         return f"""
     <section aria-labelledby="document-metadata-edit">
       <h2 id="document-metadata-edit">Metadata</h2>
-      <p>KÃ¤llor: {escape(metadata_source)}</p>
+      <p>Källor: {escape(metadata_source)}</p>
       <form method="post" action="/documents/{escape(document.id)}/metadata">
         <label for="document-title">Titel</label>
         <input id="document-title" name="title" type="text" value="{escape(document.title)}" required>
         <label for="document-author">Upphov</label>
         <input id="document-author" name="author" type="text" value="{escape(document.author)}">
-        <label for="document-year">UtgivningsÃ¥r</label>
+        <label for="document-year">Utgivningsår</label>
         <input id="document-year" name="year" type="text" inputmode="numeric" pattern="\\d{{4}}" value="{escape(document.year)}">
         <button type="submit">Spara metadata</button>
       </form>
@@ -1028,8 +1003,8 @@ class CaptureApp:
                 "irrelevant",
                 "trivial",
                 "felaktig",
-                "Ã¶verdriven",
-                "redan kÃ¤nd",
+                "överdriven",
+                "redan känd",
                 "annat",
             )
         )
@@ -1051,19 +1026,19 @@ class CaptureApp:
 """
 
     def _render_reviewed_project_suggestion(self, candidate: KnowledgeObject) -> str:
-        project_name = "OkÃ¤nt project"
+        project_name = "Okänt projekt"
         if candidate.project_ids:
             try:
                 project_name = self.archive.get_project(candidate.project_ids[0]).name
             except FileNotFoundError:
-                project_name = "OkÃ¤nt project"
+                project_name = "Okänt projekt"
         return f"""
       <article data-ai-reviewed-candidate-id="{escape(candidate.id)}">
         <h4>ProjectSuggestion - {escape(candidate.review_status)}</h4>
-        <p>FÃ¶reslaget project: {escape(project_name)}</p>
+        <p>Föreslaget projekt: {escape(project_name)}</p>
         <p>AI-original: {escape(candidate.original_content or candidate.content)}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
-          <button name="decision" type="submit" value="link_project">Markera lÃ¤nkad</button>
+          <button name="decision" type="submit" value="link_project">Markera länkad</button>
           <button name="decision" type="submit" value="reject">Markera avvisad</button>
         </form>
       </article>
@@ -1553,7 +1528,7 @@ class CaptureApp:
             self.log(message)
 
     def _page(self, title: str, body: str) -> str:
-        return _repair_mojibake(f"""<!doctype html>
+        return f"""<!doctype html>
 <html lang="sv">
 <head>
   <meta charset="utf-8">
@@ -1634,7 +1609,7 @@ class CaptureApp:
   </script>
 </body>
 </html>
-""")
+"""
 
 
 def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
@@ -1884,7 +1859,6 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     )
 
         def _send_html(self, html: str) -> None:
-            html = _repair_mojibake(html)
             encoded = html.encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")

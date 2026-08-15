@@ -50,10 +50,10 @@ def main(argv: list[str] | None = None) -> None:
 
         if command == "rebuild-index":
             database_path = rebuild_document_index(archive, config.runtime_root)
-            print(f"Index Ã¥terskapat: {database_path}")
+            print(f"Index återskapat: {database_path}")
             return
     except ConfigurationError as error:
         print(error, file=sys.stderr)
         raise SystemExit(2) from error
 
-    parser.error(f"OkÃ¤nt kommando: {command}")
+    parser.error(f"Okänt kommando: {command}")
