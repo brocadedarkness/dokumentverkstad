@@ -615,7 +615,7 @@ Efter de första iterationerna har Dokumentverkstad använts i verkliga arbetsfl
 
 Grundflödet fungerar väl, men användningen har identifierat ett mindre antal brister i kärnfunktionaliteten som bör åtgärdas innan systemet går vidare till drift, portabilitet och UX-konsolidering.
 
-Iteration 7.5 ska inte introducera nya större arbetsflöden.
+Iteration 7.1 ska inte introducera nya större arbetsflöden.
 
 Den ska stabilisera sådant som redan finns och åtgärda problem som annars riskerar att påverka fortsatt användning eller framtida import av ett större dokumentarkiv.
 
@@ -746,11 +746,9 @@ Iteration 7.1 är klar när följande scenario fungerar:
 
 ## Syfte
 
-Iteration 8 handlar inte om ny kärnfunktionalitet.
+Den åttonde iterationen gör Dokumentverkstad driftsäker och portabel för långvarig vardagsanvändning.
 
-Den handlar om att Dokumentverkstad ska kunna användas varje dag utan att användaren behöver tänka på infrastrukturen, samtidigt som tjänsten och dess hemligheter skyddas på ett begripligt sätt.
-
-Dokumentverkstad ska vara stabil, återställningsbar och säker nog för kontinuerlig personlig användning.
+Grundläggande verklig användning har redan etablerats. Fokus flyttas därför från kärnfunktionalitet till installation, drift, backup, återställning, secrets och möjlighet att flytta installationen mellan maskiner.
 
 ## Arbetsflöde
 
