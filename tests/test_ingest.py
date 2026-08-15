@@ -53,6 +53,44 @@ class IngestTests(unittest.TestCase):
             self.assertFalse((ingest_source / "rapport.pdf").exists())
             self.assertTrue(results[0].processed_path.exists())
 
+    def test_filename_metadata_is_used_when_pdf_metadata_is_missing(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            ingest_source = root / "ingest"
+            ingest_source.mkdir()
+            write_minimal_pdf(
+                ingest_source / "2024 Nationell biblioteksstrategi.pdf",
+                title="",
+                text="Text.",
+            )
+            archive = Archive(root / "archive")
+
+            document = process_ingest_source(archive, ingest_source, root / "runtime")[0].document
+
+            self.assertEqual(document.title, "Nationell biblioteksstrategi")
+            self.assertEqual(document.year, "2024")
+            self.assertEqual(document.original_filename, "2024 Nationell biblioteksstrategi.pdf")
+            self.assertEqual(document.metadata_sources["title"], "filename")
+            self.assertEqual(document.metadata_sources["year"], "filename")
+
+    def test_filename_year_does_not_override_useful_pdf_title(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            ingest_source = root / "ingest"
+            ingest_source.mkdir()
+            write_minimal_pdf(
+                ingest_source / "2024 Filnamnstitel.pdf",
+                title="PDF Title",
+                text="Text.",
+            )
+            archive = Archive(root / "archive")
+
+            document = process_ingest_source(archive, ingest_source, root / "runtime")[0].document
+
+            self.assertEqual(document.title, "PDF Title")
+            self.assertEqual(document.year, "2024")
+            self.assertEqual(document.metadata_sources["title"], "pdf")
+
     def test_duplicate_pdf_does_not_create_second_document(self) -> None:
         with workspace_tempdir() as tmp:
             root = Path(tmp)

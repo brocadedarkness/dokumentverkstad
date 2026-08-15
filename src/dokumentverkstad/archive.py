@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 from .ai import AiRunRecord
-from .document import Document
+from .document import Document, choose_document_metadata
 from .knowledge import KnowledgeObject
 from .project import Project
 from .relation import Relation
@@ -58,18 +58,27 @@ class Archive:
         text: str,
         checksum_sha256: str,
         author: str = "",
+        year: str = "",
     ) -> Document:
         existing = self.find_document_by_checksum(checksum_sha256)
         if existing:
             return existing
 
         source = Path(original_path)
+        chosen_title, chosen_author, chosen_year, metadata_sources = choose_document_metadata(
+            pdf_title=title,
+            pdf_author=author,
+            pdf_year=year,
+            original_filename=source.name,
+        )
         document = Document.create(
-            title=title,
-            author=author,
+            title=chosen_title or source.stem,
+            author=chosen_author,
+            year=chosen_year,
             document_type="PDF",
             has_original_file=True,
             original_filename=source.name,
+            metadata_sources=metadata_sources,
             checksum_sha256=checksum_sha256,
             extracted_text_path="processing/text.txt",
         )
@@ -187,6 +196,21 @@ class Archive:
         self.save_document(updated)
         return updated
 
+    def remove_document_projects(
+        self, document_id: str, project_ids: tuple[str, ...]
+    ) -> Document:
+        document = self.get_document(document_id)
+        remove_ids = set(project_ids)
+        updated = document.with_projects(
+            tuple(
+                project_id
+                for project_id in document.project_ids
+                if project_id not in remove_ids
+            )
+        )
+        self.save_document(updated)
+        return updated
+
     def create_knowledge_object(
         self,
         content: str,
@@ -247,9 +271,16 @@ class Archive:
             data = json.load(handle)
         return KnowledgeObject.from_dict(data)
 
-    def update_knowledge_object(self, object_id: str, content: str) -> KnowledgeObject:
+    def update_knowledge_object(
+        self,
+        object_id: str,
+        content: str,
+        source_location: str | None = None,
+    ) -> KnowledgeObject:
         knowledge_object = self.get_knowledge_object(object_id)
-        revised = knowledge_object.revise(content)
+        revised = knowledge_object.revise(
+            content=content, source_location=source_location
+        )
         self.save_knowledge_object(revised)
         return revised
 

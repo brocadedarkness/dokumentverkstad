@@ -64,8 +64,9 @@ def process_ingest_source(
             _log(log, "  Steg: arkiverar Document")
             document = archive.register_document_with_original_pdf(
                 original_path=staged_path,
-                title=extracted.title or pdf_path.stem,
+                title=extracted.title,
                 author=extracted.author,
+                year=extracted.year,
                 text=extracted.text,
                 checksum_sha256=checksum,
             )

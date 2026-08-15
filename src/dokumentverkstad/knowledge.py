@@ -13,13 +13,31 @@ def utc_now() -> str:
 class KnowledgeVersion:
     content: str
     updated_at: str
+    source_location: str = ""
+    review_status: str = ""
+    rejection_reason: str = ""
+    event: str = "revision"
 
     @classmethod
     def from_dict(cls, data: dict[str, object]) -> "KnowledgeVersion":
-        return cls(content=str(data["content"]), updated_at=str(data["updated_at"]))
+        return cls(
+            content=str(data["content"]),
+            updated_at=str(data["updated_at"]),
+            source_location=str(data.get("source_location", "")),
+            review_status=str(data.get("review_status", "")),
+            rejection_reason=str(data.get("rejection_reason", "")),
+            event=str(data.get("event", "revision")),
+        )
 
     def to_dict(self) -> dict[str, str]:
-        return {"content": self.content, "updated_at": self.updated_at}
+        return {
+            "content": self.content,
+            "updated_at": self.updated_at,
+            "source_location": self.source_location,
+            "review_status": self.review_status,
+            "rejection_reason": self.rejection_reason,
+            "event": self.event,
+        }
 
 
 @dataclass(frozen=True)
@@ -165,12 +183,17 @@ class KnowledgeObject:
             "history": [version.to_dict() for version in self.history],
         }
 
-    def revise(self, content: str) -> "KnowledgeObject":
+    def revise(
+        self, content: str, source_location: str | None = None
+    ) -> "KnowledgeObject":
         clean_content = content.strip()
         if not clean_content:
             raise ValueError("Knowledge Object content cannot be empty.")
+        clean_source_location = (
+            self.source_location if source_location is None else source_location.strip()
+        )
 
-        previous = KnowledgeVersion(content=self.content, updated_at=self.updated_at)
+        previous = self._current_version("manual_edit")
         return KnowledgeObject(
             id=self.id,
             content=clean_content,
@@ -178,7 +201,7 @@ class KnowledgeObject:
             created_at=self.created_at,
             updated_at=utc_now(),
             document_id=self.document_id,
-            source_location=self.source_location,
+            source_location=clean_source_location,
             project_ids=self.project_ids,
             semantic_type=self.semantic_type,
             review_status=self.review_status,
@@ -233,9 +256,13 @@ class KnowledgeObject:
         clean_content = self.content if content is None else content.strip()
         if not clean_content:
             raise ValueError("Knowledge Object content cannot be empty.")
-        previous = KnowledgeVersion(content=self.content, updated_at=self.updated_at)
+        previous = self._current_version("review_decision")
         history = self.history
-        if clean_content != self.content:
+        if (
+            clean_content != self.content
+            or clean_status != self.review_status
+            or rejection_reason.strip() != self.rejection_reason
+        ):
             history = (*history, previous)
         return KnowledgeObject(
             id=self.id,
@@ -258,6 +285,16 @@ class KnowledgeObject:
             accepted_content=clean_content if clean_status == "accepted" else self.accepted_content,
             rejection_reason=rejection_reason.strip() if clean_status == "rejected" else "",
             history=history,
+        )
+
+    def _current_version(self, event: str) -> KnowledgeVersion:
+        return KnowledgeVersion(
+            content=self.content,
+            updated_at=self.updated_at,
+            source_location=self.source_location,
+            review_status=self.review_status,
+            rejection_reason=self.rejection_reason,
+            event=event,
         )
 
 

@@ -11,6 +11,7 @@ from typing import Iterator
 class PdfExtraction:
     title: str
     author: str
+    year: str
     text: str
 
 
@@ -33,6 +34,7 @@ def _extract_with_pymupdf(path: str | Path) -> PdfExtraction | None:
     return PdfExtraction(
         title=str(metadata.get("title") or "").strip(),
         author=str(metadata.get("author") or "").strip(),
+        year=_year_from_pdf_date(str(metadata.get("creationDate") or "")),
         text=text,
     )
 
@@ -43,6 +45,7 @@ def _extract_with_stdlib(path: str | Path) -> PdfExtraction:
     return PdfExtraction(
         title=_metadata_value(decoded, "Title"),
         author=_metadata_value(decoded, "Author"),
+        year=_year_from_pdf_date(_metadata_value(decoded, "CreationDate")),
         text=_extract_text(data, decoded),
     )
 
@@ -153,3 +156,8 @@ def _decode_pdf_string(value: str) -> str:
             result.append(escaped)
             index += 1
     return "".join(result)
+
+
+def _year_from_pdf_date(value: str) -> str:
+    match = re.search(r"(?:D:)?(\d{4})", value)
+    return match.group(1) if match else ""

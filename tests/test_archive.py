@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import unittest
+import json
 from pathlib import Path
 
 from dokumentverkstad.archive import Archive
+from dokumentverkstad.document import metadata_from_filename
 from helpers import workspace_tempdir
 
 
@@ -40,6 +42,40 @@ class ArchiveTests(unittest.TestCase):
             self.assertFalse(loaded.has_original_file)
             self.assertEqual(loaded.inbox_status, "new")
             self.assertEqual(loaded.project_ids, ())
+
+    def test_existing_document_without_new_metadata_fields_can_be_read(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive_root = Path(tmp) / "archive"
+            document_dir = archive_root / "documents" / "doc_legacy"
+            document_dir.mkdir(parents=True)
+            (document_dir / "metadata.json").write_text(
+                json.dumps(
+                    {
+                        "id": "doc_legacy",
+                        "type": "Document",
+                        "title": "Legacy",
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            loaded = Archive(archive_root).get_document("doc_legacy")
+
+            self.assertEqual(loaded.title, "Legacy")
+            self.assertEqual(loaded.author, "")
+            self.assertEqual(loaded.year, "")
+            self.assertEqual(loaded.original_filename, "")
+
+    def test_filename_metadata_pattern_extracts_year_and_title(self) -> None:
+        self.assertEqual(
+            metadata_from_filename("2024 Nationell biblioteksstrategi.pdf"),
+            {"year": "2024", "title": "Nationell biblioteksstrategi"},
+        )
+
+    def test_filename_without_pattern_does_not_extract_year(self) -> None:
+        self.assertEqual(metadata_from_filename("Rapport 2024 final.pdf"), {})
 
     def test_document_metadata_can_be_updated(self) -> None:
         with workspace_tempdir() as tmp:
@@ -276,6 +312,40 @@ class ArchiveTests(unittest.TestCase):
                 [item.id for item in Archive(archive_root).list_inbox_documents()],
                 [document.id],
             )
+
+    def test_manual_metadata_edit_marks_source_and_survives_restart(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive_root = Path(tmp) / "archive"
+            archive = Archive(archive_root)
+            document = archive.create_document("Old title")
+
+            archive.update_document(document.id, title="New title", author="Org", year="2024")
+            loaded = Archive(archive_root).get_document(document.id)
+
+            self.assertEqual(loaded.title, "New title")
+            self.assertEqual(loaded.author, "Org")
+            self.assertEqual(loaded.year, "2024")
+            self.assertEqual(loaded.metadata_sources["title"], "manual")
+            self.assertEqual(loaded.metadata_sources["author"], "manual")
+            self.assertEqual(loaded.metadata_sources["year"], "manual")
+
+    def test_knowledge_object_source_location_edit_preserves_previous_version(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Document")
+            created = archive.create_knowledge_object(
+                "Note", document_id=document.id, source_location="p. 12"
+            )
+
+            updated = archive.update_knowledge_object(
+                created.id, "Corrected note", source_location="p. 13"
+            )
+
+            self.assertEqual(updated.content, "Corrected note")
+            self.assertEqual(updated.source_location, "p. 13")
+            self.assertEqual(len(updated.history), 1)
+            self.assertEqual(updated.history[0].content, "Note")
+            self.assertEqual(updated.history[0].source_location, "p. 12")
 
 
 if __name__ == "__main__":
