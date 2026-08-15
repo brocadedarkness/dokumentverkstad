@@ -1,8 +1,8 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 7.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 7.1.
 
-Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, se väntande arbete i Inbox, fånga noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande och se enkel AI-/review-statistik.
+Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
 
 ## Starta Dokumentverkstad
 
@@ -112,6 +112,8 @@ Dropbox, iCloud eller liknande kan användas genom att deras klient synkar filer
 
 Ange en titel och skapa dokumentet.
 
+Du kan även ange upphov och utgivningsår direkt. Utgivningsår ska vara ett fyrsiffrigt år eller lämnas tomt.
+
 Ett manuellt Document saknar digital originalfil men fungerar ändå som context för Capture och kan kopplas till Knowledge Objects.
 
 Nya manuellt skapade Documents hamnar i Inbox med status `new`.
@@ -138,6 +140,7 @@ Systemet gör då en enkel ingest-pass:
 * skapar ett vanligt Document,
 * sparar originalfilen i Archive,
 * extraherar grundläggande metadata när möjligt,
+* använder filnamn på formen `ÅÅÅÅ Titel.pdf` som fallback för titel och utgivningsår när PDF-metadata saknas eller inte är användbar,
 * extraherar maskinläsbar text till Archive,
 * lägger det nya Document i Inbox,
 * flyttar färdigbehandlade PDF-filer till `runtime_root/ingest/processed`,
@@ -146,6 +149,8 @@ Systemet gör då en enkel ingest-pass:
 Inga Knowledge Objects skapas automatiskt och ingen AI-analys körs.
 
 Endast PDF med maskinläsbar text stöds. OCR finns inte.
+
+Metadata prioriteras enkelt: användbar PDF-metadata används först, filnamnsmönstret används som fallback för titel och år, och manuell redigering räknas därefter som användarens korrigering. Originalfilens namn sparas alltid.
 
 Om en PDF inte kan bearbetas ligger den kvar i Ingest Source så att felet kan undersökas och filen kan försökas igen senare.
 
@@ -212,6 +217,7 @@ Trash är minimal i denna iteration. Inga permanenta raderingar görs automatisk
 Document-vyn visar:
 
 * titel,
+* upphov och utgivningsår när de finns,
 * om originalfil finns,
 * länk till original-PDF när sådan finns,
 * direkt kopplade Projects,
@@ -220,6 +226,8 @@ Document-vyn visar:
 * väntande AI-kandidater med review-formulär,
 * Capture med Document som context,
 * Knowledge Objects kopplade till dokumentet.
+
+I Document-vyn finns också ett metadataformulär där titel, upphov och utgivningsår kan korrigeras utan manuell ändring av JSON-filer. Ändringen sparas i Archive och överlever omstart.
 
 Original-PDF öppnas via webbläsaren som en PDF-fil. Dokumentverkstad innehåller ingen egen PDF-läsare.
 
@@ -237,6 +245,8 @@ I Capture:
 En notering kan skapas utan Document, Project eller Relation.
 
 När Capture öppnas från ett Document föreslås aktuellt Document som källa.
+
+Befintliga Captures/Knowledge Objects kan redigeras från listorna där de visas. Det går att korrigera både innehåll och källposition. Den tidigare versionen sparas i objektets historik i Archive; UI:t visar normalt den senaste versionen.
 
 ## Source Location
 
@@ -352,6 +362,8 @@ Project Suggestions är annorlunda. De är förslag om att koppla dokumentet til
 
 När Summary, Claim, Insight eller Question accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen. Efter varje beslut återgår sidan till samma Document så att resten av AI-resultatet kan reviewas utan att lämna dokumentet.
 
+Tidigare AI-reviewbeslut visas på Document-sidan och kan korrigeras. En accepterad kandidat kan markeras som avvisad och en avvisad kandidat kan markeras som accepterad igen. AI:s originalförslag ändras inte, och tidigare beslut sparas i Knowledge Object-historiken. Om ett accepterat objekt korrigeras till avvisat visas det inte längre som etablerad kunskap. Project Suggestions hanteras konsekvent genom att den föreslagna Document-Project-kopplingen tas bort om ett tidigare länkat förslag korrigeras till avvisat.
+
 Efter körningen sparas en AI-körning i Archive med:
 
 * provider,
@@ -366,6 +378,8 @@ Efter körningen sparas en AI-körning i Archive med:
 * kandidat-ID:n.
 
 Om AI-anropet misslyckas sparas ingen accepterad kunskap automatiskt. Dokumentet och tidigare Knowledge Objects påverkas inte.
+
+AI-anrop körs fortfarande synkront i webbrequesten i Iteration 7.1. Terminalen visar därför enkel diagnostik för AI-körningens start, provider-tid, slutförande eller fel, utan att logga dokumenttext eller API-nycklar.
 
 ## Administration
 
@@ -397,6 +411,8 @@ Vyn visar:
 Statistiken beräknas från sparade AI-körningar och AI-kandidater i Archive. Runtime används inte som källa för statistiken och kan raderas utan att historiken går förlorad.
 
 Dokumentverkstad ändrar inte promptar, modeller eller review-flöden automatiskt utifrån statistiken. Informationen är endast ett underlag för användarens egen förståelse.
+
+Webbservern loggar långsamma requests med metod, path, status och tid. POST-body, query-parametrar, dokumentinnehåll och secrets loggas inte.
 
 ## Rebuild Index
 
