@@ -607,6 +607,141 @@ Iteration 7 är klar när följande scenario fungerar:
 
 > Efter några månaders användning öppnar Anders Dokumentverkstad och ser hur mycket AI som använts, vad den kostat och vilka typer av AI-förslag som oftast accepterats, redigerats eller avvisats. Informationen hjälper honom att förstå sitt eget arbetssätt, men Dokumentverkstad förändrar inte sitt beteende automatiskt.
 
+# Iteration 7.1 – Stabilisering efter verklig användning
+
+## Syfte
+
+Efter de första iterationerna har Dokumentverkstad använts i verkliga arbetsflöden under en period.
+
+Grundflödet fungerar väl, men användningen har identifierat ett mindre antal brister i kärnfunktionaliteten som bör åtgärdas innan systemet går vidare till drift, portabilitet och UX-konsolidering.
+
+Iteration 7.5 ska inte introducera nya större arbetsflöden.
+
+Den ska stabilisera sådant som redan finns och åtgärda problem som annars riskerar att påverka fortsatt användning eller framtida import av ett större dokumentarkiv.
+
+Utgångspunkten är observationerna i `UX_NOTES.md`.
+
+## Fokusområden
+
+Iterationen omfattar:
+
+- förbättrad metadatahantering för Documents,
+- möjlighet att korrigera Captures i efterhand,
+- möjlighet att korrigera tidigare AI-review-beslut,
+- undersökning och diagnostik av tillfällen då webbgränssnittet inte svarar.
+
+## Document-metadata
+
+Documents behöver kunna innehålla åtminstone:
+
+- titel,
+- upphov, exempelvis författare eller organisation,
+- utgivningsår.
+
+Metadata ska kunna komma från flera källor:
+
+1. PDF-metadata,
+2. originalfilens namn,
+3. manuell redigering.
+
+När filnamnet följer mönstret:
+
+`ÅÅÅÅ Titel.pdf`
+
+ska systemet kunna använda detta som underlag för utgivningsår och titel när motsvarande PDF-metadata saknas eller bedöms som oanvändbar.
+
+Originalfilens namn ska alltid bevaras.
+
+Metadata ska kunna korrigeras och kompletteras manuellt efter ingest.
+
+Arkivformatet ska kunna utökas utan att befintliga Documents blir ogiltiga.
+
+Mer avancerad bibliografisk metadata, externa metadatauppslag och automatisk metadataförbättring ligger utanför iterationen.
+
+## Redigering av Captures
+
+Befintliga användarskapade Captures ska kunna korrigeras genom användargränssnittet.
+
+Det gäller både innehåll och tillhörande uppgifter, exempelvis sidhänvisning.
+
+Redigering får inte kräva manuell ändring av JSON-filer.
+
+Systemets princip om kumulativ historik ska bevaras.
+
+En ändring ska därför inte innebära att den tidigare versionen försvinner utan spår.
+
+Iterationen behöver inte införa ett generellt versionshanteringsgränssnitt.
+
+## Korrigering av AI-review
+
+Ett tidigare review-beslut för en AI-genererad kandidat ska kunna korrigeras.
+
+Exempel:
+
+- ett accepterat Claim kan i efterhand markeras som avvisat,
+- ett tidigare avvisat objekt kan återställas eller accepteras om datamodellen medger detta.
+
+Tidigare review-historik ska bevaras.
+
+Korrigeringen ska inte innebära att AI:s ursprungliga kandidat förändras.
+
+## Responsivitet och diagnostik
+
+Det har vid verklig användning förekommit tillfällen då webbgränssnittet inte verkar svara på en användarhandling.
+
+Eftersom systemet för närvarande körs lokalt ska detta inte betraktas som normal nätverkslatens.
+
+Iterationen ska identifiera om långsamma eller blockerande operationer förekommer i det normala webbflödet.
+
+Det ska gå att avgöra:
+
+- vilken operation som pågår,
+- om servern fortfarande arbetar,
+- om disk-I/O, indexering eller annan synkron bearbetning blockerar requesten,
+- om användargränssnittet behöver ge återkoppling medan en operation pågår.
+
+Målet är i första hand att hitta och åtgärda faktiska blockeringsproblem.
+
+Större prestandaoptimering ligger utanför iterationen.
+
+## Avgränsning
+
+Iteration 7.1 ska inte implementera:
+
+- ny Project-modell,
+- nya relationstyper mellan Documents,
+- klassificering av användarens Captures som Claim, Insight eller Question,
+- förändrad semantik för `Later`,
+- större redesign av Inbox, Document eller Project,
+- mobilanpassning,
+- fjärråtkomst,
+- MCP-server,
+- avancerad bibliografisk metadatahämtning,
+- generell sök- eller filtreringsfunktionalitet.
+
+Dessa frågor ligger kvar som observationer i `UX_NOTES.md` eller hanteras i senare iterationer.
+
+## Tester
+
+Iterationen är godkänd när:
+
+- befintliga Documents fortfarande kan läsas efter utökningen av metadata,
+- nya Documents kan innehålla titel, upphov och utgivningsår,
+- metadata från filnamn kan identifieras för det definierade filnamnsmönstret,
+- metadata kan korrigeras manuellt,
+- en Capture kan redigeras utan manuell ändring av Archive-filer,
+- tidigare Capture-data inte förloras vid redigering,
+- ett felaktigt AI-review-beslut kan korrigeras,
+- AI:s ursprungliga kandidat bevaras,
+- kända blockerande operationer i webbflödet antingen har åtgärdats eller kan diagnostiseras,
+- hela den befintliga testsviten fortfarande passerar.
+
+## Klart när
+
+Iteration 7.1 är klar när följande scenario fungerar:
+
+> Anders importerar ett dokument vars filnamn innehåller utgivningsår och titel. Dokumentverkstad registrerar användbar metadata som Anders senare kan korrigera eller komplettera. Under läsningen upptäcker han att en tidigare Capture innehåller en felaktig sidhänvisning och rättar den genom gränssnittet utan att den tidigare historiken förloras. Han kan också korrigera ett tidigare felaktigt AI-review-beslut. Det normala webbflödet innehåller inga kända oförklarliga blockeringar.
+
 # Iteration 8 – Låt Dokumentverkstad bli vardag
 
 ## Syfte
