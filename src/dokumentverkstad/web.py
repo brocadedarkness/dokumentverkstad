@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from html import escape
+from html import escape as _html_escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import re
 from time import perf_counter
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
@@ -37,6 +38,29 @@ from .statistics import (
     UsageSummary,
     build_ai_statistics,
 )
+
+
+def escape(value: object, quote: bool = True) -> str:
+    return _html_escape(_repair_mojibake(str(value)), quote=quote)
+
+
+def _repair_mojibake(value: str) -> str:
+    return re.sub(r"\S*(?:Ã|Â|â)\S*", _repair_mojibake_token, value)
+
+
+def _repair_mojibake_token(match: re.Match[str]) -> str:
+    repaired = match.group(0)
+    for _ in range(3):
+        if not any(marker in repaired for marker in ("Ã", "Â", "â")):
+            break
+        try:
+            candidate = repaired.encode("latin-1").decode("utf-8")
+        except UnicodeError:
+            break
+        if candidate == repaired:
+            break
+        repaired = candidate
+    return repaired
 
 
 class CaptureApp:
@@ -1355,6 +1379,172 @@ class CaptureApp:
       </table>
 """
 
+    def render_document(self, document_id: str) -> str:
+        document = self.archive.get_document(document_id)
+        notes = self.archive.list_knowledge_objects_for_document(document.id)
+        candidates = self._visible_ai_candidates_for_document(document)
+        runs = self.archive.list_ai_runs_for_document(document.id)
+        linked_projects = [
+            project
+            for project in self.archive.list_projects()
+            if project.id in document.project_ids
+        ]
+        rendered_projects = ", ".join(
+            f"<a href=\"/projects/{escape(project.id)}\">{escape(project.name)}</a>"
+            for project in linked_projects
+        )
+        if not rendered_projects:
+            rendered_projects = "Inga projects"
+        original_file = (
+            f"<a href=\"/documents/{escape(document.id)}/original\">"
+            f"{escape(document.original_filename or 'original.pdf')}</a>"
+            if document.has_original_file
+            else "Ingen digital originalfil"
+        )
+        return self._page(
+            title=document.title,
+            body=f"""
+    <p><a href="/documents">Documents</a></p>
+    <h1>{escape(document.title)}</h1>
+    <dl>
+      <dt>Upphov</dt>
+      <dd>{escape(document.author or "Okänt")}</dd>
+      <dt>Utgivningsår</dt>
+      <dd>{escape(document.year or "Okänt")}</dd>
+      <dt>Originalfil</dt>
+      <dd>{original_file}</dd>
+      <dt>Projects</dt>
+      <dd>{rendered_projects}</dd>
+    </dl>
+    {self._render_document_metadata_form(document)}
+    {self._render_document_content_sections(notes)}
+    {self._render_document_ai_panel(document, candidates, runs)}
+    <section aria-labelledby="document-capture">
+      <h2 id="document-capture">Ny capture</h2>
+      {self._render_capture_form(document=document, show_context=False)}
+    </section>
+""",
+        )
+
+    def render_review_history(self, document_id: str) -> str:
+        document = self.archive.get_document(document_id)
+        reviewed_candidates = self._render_reviewed_ai_candidates(
+            self._reviewed_ai_candidates_for_document(document)
+        )
+        return self._page(
+            title="Tidigare AI-review",
+            body=f"""
+    <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
+    <h1>Tidigare AI-review</h1>
+    {reviewed_candidates}
+""",
+        )
+
+    def _render_document_ai_panel(
+        self,
+        document: Document,
+        candidates: list[KnowledgeObject],
+        runs: list[AiRunRecord],
+    ) -> str:
+        text_available = (
+            bool(document.extracted_text_path)
+            and self.archive.extracted_text_file_path(document.id).exists()
+        )
+        ai_action = (
+            f"<p><a href=\"/documents/{escape(document.id)}/ai\">Förbered AI-analys</a></p>"
+            if text_available
+            else "<p>AI-analys kräver extraherad dokumenttext.</p>"
+        )
+        rendered_candidates = self._render_ai_candidate_groups(candidates)
+        if not rendered_candidates:
+            rendered_candidates = "<p>Inga väntande AI-kandidater för dokumentet.</p>"
+        rendered_runs = "\n".join(
+            (
+                f"<li>{escape(run.status)} - {escape(run.model)} - "
+                f"{run.actual_input_tokens}/{run.actual_output_tokens} token - "
+                f"{run.actual_cost:.6f} {escape(run.currency)}</li>"
+            )
+            for run in runs
+        )
+        if not rendered_runs:
+            rendered_runs = "<li>Ingen AI-körning ännu.</li>"
+        return f"""
+    <section id="ai-review" aria-labelledby="document-ai">
+      <h2 id="document-ai">AI-review</h2>
+      {ai_action}
+      <h3>Väntande kandidater</h3>
+      {rendered_candidates}
+      <p><a href="/documents/{escape(document.id)}/review-history">Tidigare AI-review</a></p>
+      <h3>AI-körningar</h3>
+      <ul>{rendered_runs}</ul>
+    </section>
+"""
+
+    def _render_document_content_sections(self, notes: list[KnowledgeObject]) -> str:
+        groups = (
+            ("Summary", "Summary"),
+            ("Claims", "Claim"),
+            ("Insights", "Insight"),
+            ("Questions", "Question"),
+        )
+        rendered_sections: list[str] = []
+        grouped_ids: set[str] = set()
+        for heading, semantic_type in groups:
+            items = [note for note in notes if note.semantic_type == semantic_type]
+            grouped_ids.update(note.id for note in items)
+            rendered_sections.append(
+                self._render_document_note_section(heading, semantic_type, items)
+            )
+        captures = [note for note in notes if note.id not in grouped_ids]
+        rendered_sections.append(
+            self._render_document_note_section("Captures", "captures", captures)
+        )
+        return "\n".join(rendered_sections)
+
+    def _render_document_note_section(
+        self,
+        heading: str,
+        section_id: str,
+        notes: list[KnowledgeObject],
+    ) -> str:
+        return f"""
+    <section aria-labelledby="document-{escape(section_id)}">
+      <h2 id="document-{escape(section_id)}">{escape(heading)}</h2>
+      <ul>
+        {self._render_notes(notes, "Inget innehåll ännu.")}
+      </ul>
+    </section>
+"""
+
+    def _render_project_suggestion_candidate(self, candidate: KnowledgeObject) -> str:
+        project_name = "Okänt projekt"
+        project_id = candidate.project_ids[0] if candidate.project_ids else ""
+        if project_id:
+            project = self.archive.get_project(project_id)
+            project_name = project.name
+        confidence = (
+            f"<p>Confidence: {escape(candidate.confidence)}</p>"
+            if candidate.confidence
+            else ""
+        )
+        provenance = (
+            f"{escape(candidate.ai_provider)} / {escape(candidate.ai_model)} / "
+            f"{escape(candidate.prompt_version)}"
+        )
+        return f"""
+      <article id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
+        <h3>{escape(candidate.semantic_type)}</h3>
+        <p>Föreslaget projekt: {escape(project_name)}</p>
+        <p>{escape(candidate.original_content or candidate.content)}</p>
+        {confidence}
+        <p>Proveniens: AI - {provenance}</p>
+        <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
+          <button name="decision" type="submit" value="link_project">Koppla till projekt</button>
+          <button name="decision" type="submit" value="reject">Avvisa</button>
+        </form>
+      </article>
+"""
+
     def _format_statistics_cost(self, cost: float) -> str:
         return f"{cost:.6f} USD"
 
@@ -1363,7 +1553,7 @@ class CaptureApp:
             self.log(message)
 
     def _page(self, title: str, body: str) -> str:
-        return f"""<!doctype html>
+        return _repair_mojibake(f"""<!doctype html>
 <html lang="sv">
 <head>
   <meta charset="utf-8">
@@ -1444,7 +1634,7 @@ class CaptureApp:
   </script>
 </body>
 </html>
-"""
+""")
 
 
 def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
@@ -1489,6 +1679,10 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 if document_path.endswith("/ai"):
                     document_id = document_path.removesuffix("/ai")
                     self._send_html(app.render_document_ai_confirmation(document_id))
+                    return
+                if document_path.endswith("/review-history"):
+                    document_id = document_path.removesuffix("/review-history")
+                    self._send_html(app.render_review_history(document_id))
                     return
                 document_id = document_path
                 self._send_html(app.render_document(document_id))
@@ -1690,6 +1884,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     )
 
         def _send_html(self, html: str) -> None:
+            html = _repair_mojibake(html)
             encoded = html.encode("utf-8")
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "text/html; charset=utf-8")

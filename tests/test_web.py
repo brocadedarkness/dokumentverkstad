@@ -26,6 +26,20 @@ def _get(server: ThreadingHTTPServer, path: str) -> str:
     return body
 
 
+def _get_with_headers(
+    server: ThreadingHTTPServer, path: str
+) -> tuple[int, dict[str, str], str]:
+    connection = HTTPConnection(server.server_address[0], server.server_address[1])
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read().decode("utf-8")
+        headers = {key.lower(): value for key, value in response.getheaders()}
+    finally:
+        connection.close()
+    return response.status, headers, body
+
+
 def _post(server: ThreadingHTTPServer, path: str, body: str) -> tuple[int, str]:
     connection = HTTPConnection(server.server_address[0], server.server_address[1])
     try:
@@ -491,6 +505,59 @@ class CaptureAppTests(unittest.TestCase):
             final_html = restarted_app.render_inbox()
             self.assertEqual(final_html.count("data-ai-inbox-document-id="), 0)
 
+    def test_document_main_flow_orders_accepted_content_before_captures(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI document")
+            summary = _create_ai_candidate(archive, document.id, "Summary", "Summary text")
+            claim = _create_ai_candidate(archive, document.id, "Claim", "Claim text")
+            insight = _create_ai_candidate(archive, document.id, "Insight", "Insight text")
+            question = _create_ai_candidate(archive, document.id, "Question", "Question text")
+            capture = archive.create_knowledge_object(
+                "Capture text", document_id=document.id
+            )
+            app = CaptureApp(archive)
+            for candidate in (summary, claim, insight, question):
+                app.review_ai_candidate_from_form(
+                    candidate.id,
+                    f"decision=accept&content={candidate.content.replace(' ', '+')}".encode("utf-8"),
+                )
+
+            html = app.render_document(document.id)
+
+            positions = [
+                html.index("Summary text"),
+                html.index("Claim text"),
+                html.index("Insight text"),
+                html.index("Question text"),
+                html.index("Capture text"),
+            ]
+            self.assertEqual(positions, sorted(positions))
+            self.assertLess(html.index("Summary"), html.index("Claims"))
+            self.assertLess(html.index("Claims"), html.index("Insights"))
+            self.assertLess(html.index("Insights"), html.index("Questions"))
+            self.assertLess(html.index("Questions"), html.index("Captures"))
+
+    def test_review_history_is_linked_but_not_rendered_in_document_main_flow(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI document")
+            candidate = _create_ai_candidate(archive, document.id, "Claim", "Original claim")
+            app = CaptureApp(archive)
+            app.review_ai_candidate_from_form(
+                candidate.id,
+                b"decision=reject&rejection_reason=felaktig",
+            )
+
+            main_html = app.render_document(document.id)
+            history_html = app.render_review_history(document.id)
+
+            self.assertIn(f"/documents/{document.id}/review-history", main_html)
+            self.assertNotIn("AI-original: Original claim", main_html)
+            self.assertNotIn("data-ai-reviewed-candidate-id", main_html)
+            self.assertIn("AI-original: Original claim", history_html)
+            self.assertIn("data-ai-reviewed-candidate-id", history_html)
+
     def test_document_groups_ai_candidates_by_semantic_type_order(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -867,6 +934,45 @@ class CaptureAppTests(unittest.TestCase):
                 thread.join()
 
             self.assertEqual(archive.get_document(document.id).title, "Stable")
+
+    def test_server_rendered_html_uses_utf8_and_repairs_mojibake(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Å Ä Ö", author="å ä ö", year="2024")
+            project = archive.create_project("Projekt")
+            _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Förslag med å ä ö Å Ä Ö",
+                project_ids=(project.id,),
+            )
+            archive.create_knowledge_object(
+                "Capture å ä ö Å Ä Ö", document_id=document.id
+            )
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, headers, html = _get_with_headers(
+                    server, f"/documents/{document.id}"
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["content-type"], "text/html; charset=utf-8")
+            self.assertIn('<meta charset="utf-8">', html)
+            self.assertIn("Utgivningsår", html)
+            self.assertIn("Källor", html)
+            self.assertIn("Föreslaget projekt", html)
+            self.assertIn("å ä ö Å Ä Ö", html)
+            self.assertNotIn("Ã¥", html)
+            self.assertNotIn("Ã¤", html)
+            self.assertNotIn("Ã¶", html)
 
     def test_render_documents_lists_manual_documents(self) -> None:
         with workspace_tempdir() as tmp:
