@@ -384,3 +384,187 @@ Det gör det möjligt för externa AI-klienter att:
 utan att själva AI-konversationen behöver lagras i Dokumentverkstad.
 
 Detta känns som en möjlig framtida Iteration 10: **Exponera kunskapsrummet**.
+
+#2026-08-15
+
+Capture och Knowledge Objects
+
+Semantisk typ för egna Captures
+
+Det behöver övervägas om användarens egna Captures ska kunna klassificeras på samma sätt som AI-genererade Knowledge Objects, exempelvis som:
+
+* Claim
+* Insight
+* Question
+
+Det är inte självklart att alla Captures behöver eller bör klassificeras.
+
+Det finns däremot en tydlig nytta i att kunna formulera och identifiera egna Questions. Frågor kan fungera som öppna trådar för fortsatt läsning och tänkande.
+
+Detta bör utvärderas utan att göra Capture-flödet mer omständligt.
+
+⸻
+
+Captures behöver fungera bättre som minnesanteckningar
+
+Capture kopplat till Document fungerar väl under aktiv läsning.
+
+När man senare återvänder till ett Document behöver Captures däremot presenteras på ett sätt som gör dem användbara som minnesanteckningar om den tidigare läsningen.
+
+Det bör vara lätt att snabbt återfå:
+
+* vad jag själv reagerade på,
+* vilka frågor jag formulerade,
+* vilka delar av dokumentet jag bedömde som viktiga.
+
+⸻
+
+Captures måste kunna korrigeras i efterhand
+
+Jag gjorde en felaktig sidhänvisning i en Capture och upptäckte att det inte finns något naturligt sätt att korrigera den.
+
+Knowledge Objects/Captures behöver kunna redigeras i efterhand genom gränssnittet.
+
+Ändringar ska följa systemets princip om historik: den tidigare versionen bör bevaras snarare än skrivas över utan spår.
+
+Manuell redigering av JSON-filer ska inte behövas för normalt användararbete.
+
+⸻
+
+Documents
+
+Document-listan behöver visa bearbetningsstatus
+
+Den övergripande Documents-vyn behöver ge mer information om hur mycket ett dokument har bearbetats.
+
+För varje Document vore det användbart att direkt kunna se åtminstone:
+
+* om dokumentet har genomgått AI-analys,
+* hur många Captures/Knowledge Objects som är kopplade till dokumentet.
+
+Syftet är att snabbt kunna skilja mellan dokument som bara finns i arkivet och dokument som faktiskt har bearbetats.
+
+⸻
+
+Dokument kan behöva en övergripande kommentar
+
+Det kan finnas behov av en fri kommentar eller anmärkning i dokumentets metadata, exempelvis:
+
+Utkast inför möte.
+
+Detta är något annat än en Capture om dokumentets innehåll. Kommentaren beskriver snarare dokumentets sammanhang eller funktion.
+
+⸻
+
+Relationer mellan dokument behöver övervägas
+
+I verkligt arbete förekommer olika dokument som hör nära samman.
+
+Exempel:
+
+1. ett utkast till en rapport läses och kommenteras,
+2. några månader senare kommer slutrapporten,
+3. båda dokumenten bör kunna förstås tillsammans.
+
+Det behöver undersökas om detta bäst modelleras genom:
+
+* relationer mellan Documents,
+* dokumentstatus eller dokumenttyp,
+* gemensamt Project,
+* eller någon kombination av dessa.
+
+Ingen ny modell bör införas innan det finns tillräckliga verkliga användningsfall.
+
+⸻
+
+Inbox
+
+Later som faktisk uppskjutning
+
+Statusen Later har idag begränsad funktionell betydelse.
+
+En möjlig modell vore att Later:
+
+* sparar tidpunkten för uppskjutningen,
+* tillfälligt tar bort objektet från den aktiva Inboxen,
+* automatiskt visar objektet igen exempelvis nästa dag.
+
+Det är oklart om detta faktiskt skulle minska friktionen eller bara göra Inboxens beteende mindre transparent.
+
+Funktionen bör därför utvärderas innan den implementeras.
+
+⸻
+
+Drift och responsivitet
+
+Systemet svarar ibland inte på interaktion
+
+Vid vissa tillfällen verkar Dokumentverkstad inte reagera när jag utför en handling i gränssnittet.
+
+Eftersom webbserver, Archive och klient för närvarande körs lokalt på samma dator är orsaken inte uppenbar.
+
+Detta bör undersökas som ett prestanda-/driftproblem snarare än behandlas som normal latens.
+
+Det behöver framför allt fastställas:
+
+* vilka handlingar som orsakar väntan,
+* om servern arbetar under tiden,
+* om disk-I/O eller indexering blockerar,
+* om något synkront arbete blockerar HTTP-requesten,
+* om användaren behöver tydligare återkoppling när en operation faktiskt pågår.
+
+⸻
+
+Backup och portabilitet
+
+Reproducerbar backup/restore
+
+Dokumentverkstad behöver sannolikt en enkel portabilitetsfunktion för backup och flytt mellan installationer.
+
+Syftet är inte att skapa ett separat proprietärt exportformat.
+
+Funktionen bör istället paketera den befintliga strukturen på ett säkert och reproducerbart sätt, exempelvis som en tidsstämplad arkivfil innehållande:
+
+* Archive,
+* nödvändig icke-hemlig konfiguration,
+* eventuell information som behövs för att återskapa Runtime och index.
+
+Secrets ska inte ingå i en vanlig export.
+
+En återställning på en ny installation ska kunna återskapa ett fungerande Dokumentverkstad från denna backup.
+
+⸻
+
+Installation och första körning
+
+Initial konfiguration behöver ett eget flöde
+
+En ny installation bör inte förutsätta att användaren manuellt känner till alla konfigurationsfiler och miljövariabler.
+
+Vid första körningen bör Dokumentverkstad kunna guida användaren genom relevant konfiguration.
+
+Det kan exempelvis omfatta:
+
+* placering av Archive och Runtime,
+* API-provider och API-nyckel,
+* initiering av krypterad secrets-lagring,
+* nätverksåtkomst,
+* eventuell användning av Tailscale.
+
+Alla delar behöver inte vara obligatoriska. Dokumentverkstad ska fortsatt kunna användas utan exempelvis extern AI eller fjärråtkomst.
+
+⸻
+
+Erfarenhet från verklig användning
+
+Grundflödet fungerar
+
+Den första användningen i ett verkligt arbetsflöde fungerade väl.
+
+Dokumentverkstad användes för att läsa och göra Captures ur ett dokument inför ett kommande möte.
+
+Grundflödet fungerade utan att verktyget behövde behandlas som ett testobjekt.
+
+Capture kopplat till Document fungerade särskilt väl som stöd för aktiv läsning.
+
+Detta bör betraktas som ett fungerande kärnflöde och bevaras vid framtida UX-förändringar.
