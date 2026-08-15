@@ -327,13 +327,17 @@ class CaptureAppTests(unittest.TestCase):
                     f"/documents/{document.id}/candidates/{summary.id}",
                     "decision=reject&rejection_reason=annat",
                 )
-                self.assertEqual(status, 400)
+                self.assertEqual(status, 303)
             finally:
                 server.shutdown()
                 server.server_close()
                 thread.join()
 
-            self.assertEqual(archive.get_knowledge_object(summary.id).review_status, "accepted")
+            self.assertEqual(archive.get_knowledge_object(summary.id).review_status, "rejected")
+            self.assertEqual(
+                archive.get_knowledge_object(summary.id).history[-1].review_status,
+                "accepted",
+            )
             self.assertEqual(
                 archive.get_knowledge_object(first_claim.id).review_status, "accepted"
             )
@@ -580,6 +584,140 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(reviewed.review_status, "rejected")
             self.assertEqual(archive.get_document(document.id).project_ids, ())
 
+    def test_ai_review_decision_can_be_corrected_preserving_original_and_history(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI document")
+            candidate = _create_ai_candidate(
+                archive, document.id, "Claim", "Original claim"
+            )
+            app = CaptureApp(archive)
+
+            app.review_ai_candidate_from_form(
+                candidate.id,
+                b"decision=accept&content=Accepted+claim",
+            )
+            corrected = app.review_ai_candidate_from_form(
+                candidate.id,
+                b"decision=reject&rejection_reason=felaktig",
+            )
+
+            self.assertEqual(corrected.review_status, "rejected")
+            self.assertEqual(corrected.original_content, "Original claim")
+            self.assertEqual(corrected.accepted_content, "Accepted claim")
+            self.assertEqual(corrected.rejection_reason, "felaktig")
+            self.assertEqual(len(corrected.history), 2)
+            self.assertEqual(corrected.history[-1].review_status, "accepted")
+            self.assertEqual(archive.list_knowledge_objects_for_document(document.id), [])
+
+    def test_rejected_ai_candidate_can_be_corrected_to_accepted(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI document")
+            candidate = _create_ai_candidate(
+                archive, document.id, "Insight", "Original insight"
+            )
+            app = CaptureApp(archive)
+
+            app.review_ai_candidate_from_form(
+                candidate.id,
+                b"decision=reject&rejection_reason=irrelevant",
+            )
+            corrected = app.review_ai_candidate_from_form(
+                candidate.id,
+                b"decision=accept&content=Useful+insight",
+            )
+
+            self.assertEqual(corrected.review_status, "accepted")
+            self.assertEqual(corrected.content, "Useful insight")
+            self.assertEqual(corrected.original_content, "Original insight")
+            self.assertEqual(corrected.history[-1].review_status, "rejected")
+            self.assertEqual(
+                [item.id for item in archive.list_knowledge_objects_for_document(document.id)],
+                [candidate.id],
+            )
+
+    def test_corrected_project_suggestion_unlinks_document_project(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("AI document")
+            project = archive.create_project("Project")
+            suggestion = _create_ai_candidate(
+                archive,
+                document.id,
+                "ProjectSuggestion",
+                "Link project.",
+                project_ids=(project.id,),
+            )
+            app = CaptureApp(archive)
+
+            app.review_ai_candidate_from_form(suggestion.id, b"decision=link_project")
+            corrected = app.review_ai_candidate_from_form(
+                suggestion.id,
+                b"decision=reject",
+            )
+
+            self.assertEqual(corrected.review_status, "rejected")
+            self.assertEqual(archive.get_document(document.id).project_ids, ())
+            self.assertEqual(corrected.history[-1].review_status, "handled")
+
+    def test_wrong_document_candidate_request_leaves_archive_consistent(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            first_document = archive.create_document("First")
+            second_document = archive.create_document("Second")
+            candidate = _create_ai_candidate(
+                archive, first_document.id, "Claim", "Original claim"
+            )
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, _ = _post(
+                    server,
+                    f"/documents/{second_document.id}/candidates/{candidate.id}",
+                    b"decision=accept&content=Wrong".decode("utf-8"),
+                )
+                self.assertEqual(status, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            loaded = archive.get_knowledge_object(candidate.id)
+            self.assertEqual(loaded.review_status, "candidate")
+            self.assertEqual(loaded.content, "Original claim")
+
+    def test_slow_request_diagnostics_do_not_log_post_body(self) -> None:
+        with workspace_tempdir() as tmp:
+            messages: list[str] = []
+            archive = Archive(Path(tmp) / "archive")
+            app = CaptureApp(
+                archive,
+                log=messages.append,
+                slow_request_threshold_seconds=0,
+            )
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, _ = _post(
+                    server,
+                    "/capture",
+                    "content=secret-body-value",
+                )
+                self.assertEqual(status, 303)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertTrue(any("slow request" in message for message in messages))
+            joined = "\n".join(messages)
+            self.assertIn("path=/capture", joined)
+            self.assertNotIn("secret-body-value", joined)
+
     def test_existing_project_link_hides_project_suggestion_and_not_duplicate_link(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -682,6 +820,54 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(loaded.author, "Hegel")
             self.assertFalse(loaded.has_original_file)
 
+    def test_document_metadata_can_be_edited_over_http(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Old")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/metadata",
+                    "title=New&author=Org&year=2024",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, f"/documents/{document.id}")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            loaded = Archive(Path(tmp) / "archive").get_document(document.id)
+            self.assertEqual(loaded.title, "New")
+            self.assertEqual(loaded.author, "Org")
+            self.assertEqual(loaded.year, "2024")
+
+    def test_invalid_document_year_over_http_does_not_persist(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Stable")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, _ = _post(
+                    server,
+                    f"/documents/{document.id}/metadata",
+                    "title=Changed&author=Org&year=24",
+                )
+                self.assertEqual(status, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(archive.get_document(document.id).title, "Stable")
+
     def test_render_documents_lists_manual_documents(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -752,6 +938,42 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(len(notes), 1)
             self.assertEqual(notes[0].content, "Ny notering")
             self.assertEqual(notes[0].source_location, "s. 35")
+
+    def test_capture_can_be_edited_over_http_and_history_is_kept(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Document")
+            note = archive.create_knowledge_object(
+                "Original note", document_id=document.id, source_location="p. 1"
+            )
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                edit_html = _get(server, f"/knowledge/{note.id}/edit")
+                self.assertIn("Original note", edit_html)
+                status, location = _post(
+                    server,
+                    f"/knowledge/{note.id}",
+                    "content=Corrected+note&source_location=p.+2",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, f"/documents/{document.id}")
+                document_html = _get(server, f"/documents/{document.id}")
+                self.assertIn("Corrected note", document_html)
+                self.assertIn("p. 2", document_html)
+                self.assertNotIn("Original note</p>", document_html)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            loaded = Archive(Path(tmp) / "archive").get_knowledge_object(note.id)
+            self.assertEqual(loaded.content, "Corrected note")
+            self.assertEqual(loaded.source_location, "p. 2")
+            self.assertEqual(loaded.history[0].content, "Original note")
+            self.assertEqual(loaded.history[0].source_location, "p. 1")
 
     def test_project_form_creates_project(self) -> None:
         with workspace_tempdir() as tmp:

@@ -4,6 +4,8 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from time import perf_counter
+from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .ai import (
@@ -43,6 +45,8 @@ class CaptureApp:
         archive: Archive,
         config: AppConfig | None = None,
         ai_provider: AiProvider | None = None,
+        log: Callable[[str], None] | None = None,
+        slow_request_threshold_seconds: float = 0.5,
     ):
         self.archive = archive
         self.config = config
@@ -57,6 +61,8 @@ class CaptureApp:
         self.secrets_path = (
             config.secrets_path if config else archive.root.parent / "secrets.toml"
         )
+        self.log = log
+        self.slow_request_threshold_seconds = slow_request_threshold_seconds
         self.archive.initialize()
 
     def render_capture(
@@ -197,6 +203,10 @@ class CaptureApp:
     <form method="post" action="/documents">
       <label for="title">Titel</label>
       <input id="title" name="title" type="text" required>
+      <label for="author">Upphov</label>
+      <input id="author" name="author" type="text">
+      <label for="year">UtgivningsÃ¥r</label>
+      <input id="year" name="year" type="text" inputmode="numeric" pattern="\\d{{4}}">
       <button type="submit">Skapa document</button>
     </form>
     <h2>Registrerade documents</h2>
@@ -235,11 +245,16 @@ class CaptureApp:
     <p><a href="/documents">Documents</a></p>
     <h1>{escape(document.title)}</h1>
     <dl>
+      <dt>Upphov</dt>
+      <dd>{escape(document.author or "OkÃ¤nt")}</dd>
+      <dt>UtgivningsÃ¥r</dt>
+      <dd>{escape(document.year or "OkÃ¤nt")}</dd>
       <dt>Originalfil</dt>
       <dd>{original_file}</dd>
       <dt>Projects</dt>
       <dd>{rendered_projects}</dd>
     </dl>
+    {self._render_document_metadata_form(document)}
     {self._render_document_ai_panel(document, candidates, runs)}
     <section aria-labelledby="document-capture">
       <h2 id="document-capture">Capture</h2>
@@ -418,6 +433,15 @@ class CaptureApp:
             description=form.get("description", [""])[0],
         )
 
+    def update_document_from_form(self, document_id: str, body: bytes) -> Document:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        return self.archive.update_document(
+            document_id,
+            title=form.get("title", [""])[0],
+            author=form.get("author", [""])[0],
+            year=form.get("year", [""])[0],
+        )
+
     def link_note_to_project_from_form(self, project_id: str, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
         object_id = form.get("object_id", [""])[0]
@@ -433,8 +457,8 @@ class CaptureApp:
 
     def review_ai_candidate_from_form(self, object_id: str, body: bytes) -> KnowledgeObject:
         candidate = self.archive.get_knowledge_object(object_id)
-        if candidate.review_status not in {"candidate", "later"}:
-            raise ValueError("AI candidate has already been reviewed.")
+        if not candidate.ai_run_id:
+            raise ValueError("Only AI candidates can be reviewed.")
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
         decision = form.get("decision", [""])[0]
         content = form.get("content", [""])[0]
@@ -453,6 +477,10 @@ class CaptureApp:
                     object_id, "handled", content=candidate.content
                 )
             if decision == "reject":
+                if candidate.review_status == "handled" and candidate.document_id:
+                    self.archive.remove_document_projects(
+                        candidate.document_id, candidate.project_ids
+                    )
                 return self.archive.review_knowledge_candidate(
                     object_id, "rejected", rejection_reason=rejection_reason
                 )
@@ -477,6 +505,8 @@ class CaptureApp:
             raise AiProviderError("AI-analys kräver uttryckligt godkännande.")
 
         document = self.archive.get_document(document_id)
+        started = perf_counter()
+        self._log(f"ai analysis start document_id={document.id}")
         text = self._read_document_text(document)
         estimate = self._estimate_document_ai_cost(text)
         validate_document_size(estimate.input_tokens)
@@ -494,12 +524,18 @@ class CaptureApp:
             projects = tuple(
                 (project.id, project.name) for project in self.archive.list_projects()
             )
+            provider_started = perf_counter()
             result = provider.analyze_document(
                 title=document.title,
                 text=text,
                 projects=projects,
                 model=self.ai_model,
                 max_output_tokens=self.ai_max_output_tokens,
+            )
+            self._log(
+                "ai provider completed "
+                f"document_id={document.id} "
+                f"duration_ms={(perf_counter() - provider_started) * 1000:.1f}"
             )
             candidate_ids = tuple(
                 self.archive.create_ai_candidate(
@@ -523,10 +559,21 @@ class CaptureApp:
             )
             completed = run.completed(result.usage, candidate_ids)
             self.archive.save_ai_run(completed)
+            self._log(
+                "ai analysis completed "
+                f"document_id={document.id} "
+                f"candidate_count={len(candidate_ids)} "
+                f"duration_ms={(perf_counter() - started) * 1000:.1f}"
+            )
             return completed
         except AiProviderError:
             failed = run.failed("AI-körningen misslyckades.")
             self.archive.save_ai_run(failed)
+            self._log(
+                "ai analysis failed "
+                f"document_id={document.id} "
+                f"duration_ms={(perf_counter() - started) * 1000:.1f}"
+            )
             raise
 
     def update_inbox_document_from_form(self, document_id: str, body: bytes) -> None:
@@ -548,6 +595,30 @@ class CaptureApp:
             document_id=document_id,
             source_location=source_location,
             project_ids=(project_id,) if project_id else (),
+        )
+
+    def update_note_from_form(self, object_id: str, body: bytes) -> KnowledgeObject:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        return self.archive.update_knowledge_object(
+            object_id,
+            content=form.get("content", [""])[0],
+            source_location=form.get("source_location", [""])[0],
+        )
+
+    def render_note_edit(self, object_id: str) -> str:
+        note = self.archive.get_knowledge_object(object_id)
+        return self._page(
+            title="Redigera capture",
+            body=f"""
+    <h1>Redigera capture</h1>
+    <form method="post" action="/knowledge/{escape(note.id)}">
+      <label for="content">InnehÃ¥ll</label>
+      <textarea id="content" name="content" required>{escape(note.content)}</textarea>
+      <label for="source_location">KÃ¤llposition</label>
+      <input id="source_location" name="source_location" type="text" value="{escape(note.source_location)}">
+      <button type="submit">Spara</button>
+    </form>
+""",
         )
 
     def _render_capture_form(
@@ -600,6 +671,29 @@ class CaptureApp:
       {project_choice}
       <button type="submit">Spara</button>
     </form>
+"""
+
+    def _render_document_metadata_form(self, document: Document) -> str:
+        sources = document.metadata_sources or {}
+        metadata_source = ", ".join(
+            f"{field}: {source}" for field, source in sorted(sources.items())
+        )
+        if not metadata_source:
+            metadata_source = "Ingen sparad kÃ¤llinformation."
+        return f"""
+    <section aria-labelledby="document-metadata-edit">
+      <h2 id="document-metadata-edit">Metadata</h2>
+      <p>KÃ¤llor: {escape(metadata_source)}</p>
+      <form method="post" action="/documents/{escape(document.id)}/metadata">
+        <label for="document-title">Titel</label>
+        <input id="document-title" name="title" type="text" value="{escape(document.title)}" required>
+        <label for="document-author">Upphov</label>
+        <input id="document-author" name="author" type="text" value="{escape(document.author)}">
+        <label for="document-year">UtgivningsÃ¥r</label>
+        <input id="document-year" name="year" type="text" inputmode="numeric" pattern="\\d{{4}}" value="{escape(document.year)}">
+        <button type="submit">Spara metadata</button>
+      </form>
+    </section>
 """
 
     def _render_project_link_form(self, project: Project, notes: list[object]) -> str:
@@ -746,6 +840,19 @@ class CaptureApp:
             and self._ai_candidate_should_be_visible(candidate, document=document)
         ]
 
+    def _reviewed_ai_candidates_for_document(
+        self, document: Document
+    ) -> list[KnowledgeObject]:
+        candidates = [
+            candidate
+            for candidate in self.archive.list_recent_knowledge_objects(limit=10_000)
+            if candidate.document_id == document.id
+            and candidate.ai_run_id
+            and candidate.review_status in {"accepted", "rejected", "handled"}
+        ]
+        candidates.sort(key=lambda item: item.updated_at, reverse=True)
+        return candidates
+
     def _ai_candidate_should_be_visible(
         self, candidate: KnowledgeObject, document: Document | None = None
     ) -> bool:
@@ -882,6 +989,62 @@ class CaptureApp:
       </article>
 """
 
+    def _render_reviewed_ai_candidates(self, candidates: list[KnowledgeObject]) -> str:
+        if not candidates:
+            return "<p>Inga tidigare AI-reviewbeslut.</p>"
+        return "\n".join(self._render_reviewed_ai_candidate(candidate) for candidate in candidates)
+
+    def _render_reviewed_ai_candidate(self, candidate: KnowledgeObject) -> str:
+        if candidate.semantic_type == "ProjectSuggestion":
+            return self._render_reviewed_project_suggestion(candidate)
+        rejection_options = "\n".join(
+            f"<option value=\"{escape(reason)}\">{escape(reason)}</option>"
+            for reason in (
+                "",
+                "irrelevant",
+                "trivial",
+                "felaktig",
+                "Ã¶verdriven",
+                "redan kÃ¤nd",
+                "annat",
+            )
+        )
+        return f"""
+      <article data-ai-reviewed-candidate-id="{escape(candidate.id)}">
+        <h4>{escape(candidate.semantic_type)} - {escape(candidate.review_status)}</h4>
+        <p>AI-original: {escape(candidate.original_content or candidate.content)}</p>
+        <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
+          <label for="reviewed-content-{escape(candidate.id)}">Formulering</label>
+          <textarea id="reviewed-content-{escape(candidate.id)}" name="content">{escape(candidate.content)}</textarea>
+          <label for="reviewed-reason-{escape(candidate.id)}">Avvisningsorsak</label>
+          <select id="reviewed-reason-{escape(candidate.id)}" name="rejection_reason">
+            {rejection_options}
+          </select>
+          <button name="decision" type="submit" value="accept">Markera accepterad</button>
+          <button name="decision" type="submit" value="reject">Markera avvisad</button>
+        </form>
+      </article>
+"""
+
+    def _render_reviewed_project_suggestion(self, candidate: KnowledgeObject) -> str:
+        project_name = "OkÃ¤nt project"
+        if candidate.project_ids:
+            try:
+                project_name = self.archive.get_project(candidate.project_ids[0]).name
+            except FileNotFoundError:
+                project_name = "OkÃ¤nt project"
+        return f"""
+      <article data-ai-reviewed-candidate-id="{escape(candidate.id)}">
+        <h4>ProjectSuggestion - {escape(candidate.review_status)}</h4>
+        <p>FÃ¶reslaget project: {escape(project_name)}</p>
+        <p>AI-original: {escape(candidate.original_content or candidate.content)}</p>
+        <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
+          <button name="decision" type="submit" value="link_project">Markera lÃ¤nkad</button>
+          <button name="decision" type="submit" value="reject">Markera avvisad</button>
+        </form>
+      </article>
+"""
+
     def _render_project_suggestion_candidate(self, candidate: KnowledgeObject) -> str:
         project_name = "Okänt project"
         project_id = candidate.project_ids[0] if candidate.project_ids else ""
@@ -929,6 +1092,9 @@ class CaptureApp:
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
             rendered_candidates = "<p>Inga väntande AI-kandidater för dokumentet.</p>"
+        reviewed_candidates = self._render_reviewed_ai_candidates(
+            self._reviewed_ai_candidates_for_document(document)
+        )
         rendered_runs = "\n".join(
             (
                 f"<li>{escape(run.status)} - {escape(run.model)} - "
@@ -947,6 +1113,8 @@ class CaptureApp:
       {rendered_candidates}
       <h3>AI-körningar</h3>
       <ul>{rendered_runs}</ul>
+      <h3>Tidigare reviewbeslut</h3>
+      {reviewed_candidates}
     </section>
 """
 
@@ -989,7 +1157,10 @@ class CaptureApp:
         source = ""
         if source_location:
             source = f"<small>Källa: {escape(source_location)}</small>"
-        return f"<li><p>{escape(content)}</p><small>ID: {escape(note_id)}</small>{source}</li>"
+        return (
+            f"<li><p>{escape(content)}</p>{source}"
+            f"<p><a href=\"/knowledge/{escape(note_id)}/edit\">Redigera</a></p></li>"
+        )
 
     def _accepted_recent_notes(self) -> list[KnowledgeObject]:
         return [
@@ -1187,6 +1358,10 @@ class CaptureApp:
     def _format_statistics_cost(self, cost: float) -> str:
         return f"{cost:.6f} USD"
 
+    def _log(self, message: str) -> None:
+        if self.log:
+            self.log(message)
+
     def _page(self, title: str, body: str) -> str:
         return f"""<!doctype html>
 <html lang="sv">
@@ -1275,6 +1450,12 @@ class CaptureApp:
 def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            self._timed_request(self._handle_GET)
+
+        def do_POST(self) -> None:
+            self._timed_request(self._handle_POST)
+
+        def _handle_GET(self) -> None:
             parsed = urlparse(self.path)
             if parsed.path in ("/", "/inbox"):
                 self._send_html(app.render_inbox())
@@ -1312,13 +1493,17 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 document_id = document_path
                 self._send_html(app.render_document(document_id))
                 return
+            if parsed.path.startswith("/knowledge/") and parsed.path.endswith("/edit"):
+                object_id = unquote(parsed.path.removeprefix("/knowledge/")).removesuffix("/edit")
+                self._send_html(app.render_note_edit(object_id))
+                return
             if parsed.path.startswith("/projects/"):
                 project_id = unquote(parsed.path.removeprefix("/projects/"))
                 self._send_html(app.render_project(project_id))
                 return
             self.send_error(HTTPStatus.NOT_FOUND)
 
-        def do_POST(self) -> None:
+        def _handle_POST(self) -> None:
             parsed = urlparse(self.path)
             length = int(self.headers.get("Content-Length", "0"))
             body = self.rfile.read(length)
@@ -1376,7 +1561,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     self.send_error(HTTPStatus.BAD_REQUEST)
                     return
                 existing_candidate = app.archive.get_knowledge_object(object_id)
-                if existing_candidate.document_id and existing_candidate.document_id != document_id:
+                if existing_candidate.document_id != document_id:
                     self.send_error(HTTPStatus.BAD_REQUEST, "Candidate belongs to another document.")
                     return
                 try:
@@ -1392,6 +1577,19 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 self.end_headers()
                 return
 
+            if parsed.path.startswith("/documents/") and parsed.path.endswith("/metadata"):
+                document_path = unquote(parsed.path.removeprefix("/documents/"))
+                document_id = document_path.removesuffix("/metadata")
+                try:
+                    app.update_document_from_form(document_id, body)
+                except ValueError as error:
+                    self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", f"/documents/{document_id}")
+                self.end_headers()
+                return
+
             if parsed.path.startswith("/documents/") and parsed.path.endswith("/ai/run"):
                 document_path = unquote(parsed.path.removeprefix("/documents/"))
                 document_id = document_path.removesuffix("/ai/run")
@@ -1403,6 +1601,21 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     return
                 self.send_response(HTTPStatus.SEE_OTHER)
                 self.send_header("Location", "/inbox")
+                self.end_headers()
+                return
+
+            if parsed.path.startswith("/knowledge/"):
+                object_id = unquote(parsed.path.removeprefix("/knowledge/"))
+                try:
+                    note = app.update_note_from_form(object_id, body)
+                except ValueError as error:
+                    self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header(
+                    "Location",
+                    f"/documents/{note.document_id}" if note.document_id else "/capture",
+                )
                 self.end_headers()
                 return
 
@@ -1453,6 +1666,29 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
         def log_message(self, format: str, *args: object) -> None:
             return
 
+        def send_response(
+            self, code: int, message: str | None = None
+        ) -> None:
+            self._response_status = code
+            super().send_response(code, message)
+
+        def _timed_request(self, handler: Callable[[], None]) -> None:
+            started = perf_counter()
+            self._response_status = 0
+            try:
+                handler()
+            finally:
+                elapsed = perf_counter() - started
+                if elapsed >= app.slow_request_threshold_seconds:
+                    parsed = urlparse(self.path)
+                    app._log(
+                        "slow request "
+                        f"method={self.command} "
+                        f"path={parsed.path} "
+                        f"status={self._response_status or 'unknown'} "
+                        f"duration_ms={elapsed * 1000:.1f}"
+                    )
+
         def _send_html(self, html: str) -> None:
             encoded = html.encode("utf-8")
             self.send_response(HTTPStatus.OK)
@@ -1478,7 +1714,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
 def main(config_path: str | None = None) -> None:
     config = load_config(config_path)
     ensure_app_directories(config)
-    app = CaptureApp(Archive(config.archive_root), config=config)
+    app = CaptureApp(Archive(config.archive_root), config=config, log=print)
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
     print(f"Dokumentverkstad Capture körs på http://{config.host}:{config.port}/")
     server.serve_forever()
