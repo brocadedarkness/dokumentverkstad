@@ -693,3 +693,66 @@ Capture kopplat till Document fungerade särskilt väl som stöd för aktiv läs
 Detta bör betraktas som ett fungerande kärnflöde.
 
 Framtida UX-förändringar bör förbättra arbetsflödet utan att göra den nu fungerande aktiva läsningen mer komplicerad.
+
+# 2026-08-16
+
+## Erfarenhet från utveckling av iteration 7.1
+
+### Möjlig brist i relationen mellan dokument
+Document.project_ids uttrycker just nu att relationen finns, men inte varför den finns. Så fort samma relation kan uppstå på flera sätt — manuellt, via AI-förslag, kanske senare via import eller annan automatik — räcker en ren mängd project_ids inte för att säkert kunna “ångra” en specifik händelse.
+
+**Bedömning**
+
+* Ingen automatisk unlink vid korrigering ses som säkert beteende tills proveniens finns.
+* Frågan bör tas upp igen när relationer/proveniens ses över, troligen före eller under Iteration 9.
+
+## Erfarenheter av användning efter iteration 7.1
+
+### Behov av förändring i Inbox
+
+Svårt att få överblick över inboxen när det ligger flera dokument där. Det tar tid att beta igenom många dokument.
+
+**Bedömning**
+
+* Önskvärt med en enkel siffra överst i inboxen av hur många dokument som ligger i kön.
+* Överväg en möjlighet till massredigering, t.ex. att kunna markera flera dokument som klara och tillhörande olika projekt, sedan spara allt samtidigt.
+* Om inte sidan behövde laddas om vid varje åtgärd skulle arbetet kunna gå klart snabbare. Asynkrona javascript/ajax kan vara en lösning.
+
+### Behov av förändring i Documents-vyn
+
+Större dokumentmängd förändrar kraven på Documents-vyn. Efter import av ett befintligt arkiv på cirka 230 PDF:er fungerar ingest och dubletthantering, men listvyn behöver utvärderas i verklig användning. Det är sannolikt att sortering, filtrering, sökning och bearbetningsstatus blir viktigare när dokumentmängden växer.
+
+Likaså bör dokument som fortfarande ligger i inboxen och väntar på att sparas eller kastas inte visas i listvyn på Documents-sidan. Där bör bara dokument som godkänts i inboxen finnas med.
+
+Det behövs ett sätt att från Documents-vyn knyta ett dokument till ett nytt projekt. Enda sättet idag är att göra en AI-review och knyta dokumentet till något av de projekt som föreslås, vilket är en märklig omväg.
+
+**Bedömning**
+Utvärderar behoven och väntar till iteration 9
+
+### Behov av förändring i vyn för enskilda Documents
+
+Länken till original-pdf öppnar pdf:en i samma fönster som man redan befinner sig i. Det tycker jag normalt är bra, men här blir det ett problem.
+
+**Bedömning**
+
+När man klickar på länken till originaldokument bör detta öppnas i en ny flik i webbläsaren.
+
+### Prestandaproblem som effekt av större arkiv
+
+Prestandan försämras när Archive växer. Efter import av cirka 230 Documents tar vissa lokala vyer omkring 1–2 sekunder att rendera. Slow-request-loggen visar exempelvis ~1 s för en Document-vy och ~2 s för Inbox. Detta tyder på att vyerna kan göra för omfattande genomläsningar av Archive vid varje request. 
+
+**Bedömning**
+
+Undersök om befintligt Runtime/SQLite-index bör utökas för listning, räknare och statusdata. Archive ska fortsatt vara auktoritativt och indexet helt återskapbart.
+
+### Vidareutveckling av AI-körningar
+
+Är det möjligt att även vid Ai-körningarna lägga en sidreferens? Det skulle underlätta det framtida arbetet.
+
+### Lång väntetid vid AI-körningar
+
+AI-körningar blockerar HTTP-requesten. Ett verkligt AI-anrop tog cirka 86 sekunder, varav nästan hela tiden låg hos AI-providern. 
+
+**Bedömning**
+
+AI-analys bör köras som ett bakgrundsjobb så att webbgränssnittet förblir responsivt under analysen.
