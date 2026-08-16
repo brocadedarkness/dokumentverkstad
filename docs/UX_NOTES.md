@@ -727,6 +727,7 @@ Likaså bör dokument som fortfarande ligger i inboxen och väntar på att spara
 Det behövs ett sätt att från Documents-vyn knyta ett dokument till ett nytt projekt. Enda sättet idag är att göra en AI-review och knyta dokumentet till något av de projekt som föreslås, vilket är en märklig omväg.
 
 **Bedömning**
+
 Utvärderar behoven och väntar till iteration 9
 
 ### Behov av förändring i vyn för enskilda Documents
