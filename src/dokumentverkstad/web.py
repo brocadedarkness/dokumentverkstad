@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +38,14 @@ from .statistics import (
     UsageSummary,
     build_ai_statistics,
 )
+
+
+@dataclass(frozen=True)
+class DocumentListItem:
+    document: Document
+    ai_analyzed: bool
+    capture_count: int
+
 
 class CaptureApp:
     def __init__(
@@ -185,15 +194,40 @@ class CaptureApp:
 """,
         )
 
-    def render_documents(self) -> str:
-        documents = self.archive.list_documents()
+    def render_documents(
+        self,
+        query: str = "",
+        sort: str = "latest",
+        ai_status: str = "",
+        project_id: str = "",
+    ) -> str:
+        projects = self.archive.list_projects()
+        project_names = {project.id: project.name for project in projects}
+        items = self._document_list_items()
+        items = self._filter_document_list_items(
+            items,
+            query=query,
+            ai_status=ai_status,
+            project_id=project_id,
+        )
+        items = self._sort_document_list_items(items, sort=sort)
         rendered_documents = "\n".join(
-            f"<li><a href=\"/documents/{escape(document.id)}\">"
-            f"{escape(document.title)}</a></li>"
-            for document in documents
+            self._render_document_list_item(item, project_names) for item in items
         )
         if not rendered_documents:
             rendered_documents = "<li>Inga dokument ännu.</li>"
+
+        selected_sort = sort if sort in {"latest", "title", "year"} else "latest"
+        selected_ai_status = (
+            ai_status if ai_status in {"analyzed", "not_analyzed"} else ""
+        )
+        selected_project_id = project_id if project_id in project_names else ""
+        project_options = "\n".join(
+            f'<option value="{escape(project.id)}"'
+            f'{" selected" if project.id == selected_project_id else ""}>'
+            f"{escape(project.name)}</option>"
+            for project in projects
+        )
 
         return self._page(
             title="Documents",
@@ -209,12 +243,156 @@ class CaptureApp:
       <button type="submit">Skapa document</button>
     </form>
     <h2>Registrerade documents</h2>
-    <ul>
+    <form id="documents-filter" method="get" action="/documents">
+      <label for="document-filter-q">Sök</label>
+      <input id="document-filter-q" name="q" type="search" value="{escape(query)}">
+      <label for="document-sort">Sortering</label>
+      <select id="document-sort" name="sort">
+        <option value="latest"{" selected" if selected_sort == "latest" else ""}>Senast tillagd</option>
+        <option value="title"{" selected" if selected_sort == "title" else ""}>Titel</option>
+        <option value="year"{" selected" if selected_sort == "year" else ""}>Utgivningsår</option>
+      </select>
+      <label for="document-ai-status">AI-status</label>
+      <select id="document-ai-status" name="ai_status">
+        <option value=""{" selected" if selected_ai_status == "" else ""}>Alla</option>
+        <option value="analyzed"{" selected" if selected_ai_status == "analyzed" else ""}>AI-analyserade</option>
+        <option value="not_analyzed"{" selected" if selected_ai_status == "not_analyzed" else ""}>Ej AI-analyserade</option>
+      </select>
+      <label for="document-project">Project</label>
+      <select id="document-project" name="project_id">
+        <option value=""{" selected" if selected_project_id == "" else ""}>Alla</option>
+        {project_options}
+      </select>
+      <button type="submit">Filtrera</button>
+    </form>
+    <ul class="document-list">
       {rendered_documents}
     </ul>
     <p><a href="/capture">Capture utan dokument</a></p>
 """,
         )
+
+    def _document_list_items(self) -> list[DocumentListItem]:
+        documents = self.archive.list_documents()
+        accepted_user_captures = [
+            item
+            for item in self.archive.list_knowledge_objects()
+            if item.creator == "user"
+            and item.review_status == "accepted"
+            and item.document_id
+        ]
+        completed_ai_document_ids = {
+            run.document_id
+            for run in self.archive.list_ai_runs()
+            if run.status == "completed"
+        }
+
+        capture_counts: dict[str, int] = {}
+        for capture in accepted_user_captures:
+            capture_counts[capture.document_id] = (
+                capture_counts.get(capture.document_id, 0) + 1
+            )
+
+        return [
+            DocumentListItem(
+                document=document,
+                ai_analyzed=document.id in completed_ai_document_ids,
+                capture_count=capture_counts.get(document.id, 0),
+            )
+            for document in documents
+        ]
+
+    def _filter_document_list_items(
+        self,
+        items: list[DocumentListItem],
+        query: str,
+        ai_status: str,
+        project_id: str,
+    ) -> list[DocumentListItem]:
+        clean_query = query.strip().casefold()
+
+        def matches(item: DocumentListItem) -> bool:
+            document = item.document
+            if clean_query:
+                searchable = " ".join(
+                    value
+                    for value in (document.title, document.author, document.year)
+                    if value
+                ).casefold()
+                if clean_query not in searchable:
+                    return False
+            if ai_status == "analyzed" and not item.ai_analyzed:
+                return False
+            if ai_status == "not_analyzed" and item.ai_analyzed:
+                return False
+            if project_id and project_id not in document.project_ids:
+                return False
+            return True
+
+        return [item for item in items if matches(item)]
+
+    def _sort_document_list_items(
+        self, items: list[DocumentListItem], sort: str
+    ) -> list[DocumentListItem]:
+        if sort == "title":
+            return sorted(
+                items,
+                key=lambda item: (
+                    item.document.title.casefold(),
+                    item.document.year or "9999",
+                    item.document.created_at,
+                    item.document.id,
+                ),
+            )
+        if sort == "year":
+            return sorted(
+                items,
+                key=lambda item: (
+                    item.document.year == "",
+                    -(int(item.document.year) if item.document.year.isdigit() else 0),
+                    item.document.title.casefold(),
+                    item.document.id,
+                ),
+            )
+        return sorted(
+            items,
+            key=lambda item: (
+                item.document.created_at,
+                item.document.title.casefold(),
+                item.document.id,
+            ),
+            reverse=True,
+        )
+
+    def _render_document_list_item(
+        self, item: DocumentListItem, project_names: dict[str, str]
+    ) -> str:
+        document = item.document
+        metadata = []
+        if document.year:
+            metadata.append(escape(document.year))
+        if document.author:
+            metadata.append(escape(document.author))
+        metadata.append("AI-analyserad" if item.ai_analyzed else "Ej AI-analyserad")
+        metadata.append(self._format_capture_count(item.capture_count))
+        project_labels = [
+            escape(project_names[project_id])
+            for project_id in document.project_ids
+            if project_id in project_names
+        ]
+        if project_labels:
+            metadata.append("Project: " + ", ".join(project_labels))
+        return (
+            "<li>"
+            f'<a href="/documents/{escape(document.id)}">{escape(document.title)}</a>'
+            f"<br><span>{' | '.join(metadata)}</span>"
+            "</li>"
+        )
+
+    def _format_capture_count(self, count: int) -> str:
+        if count == 1:
+            return "1 egen capture"
+        return f"{count} egna captures"
 
     def render_document(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
@@ -1634,7 +1812,15 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 self._send_html(app.render_capture(document=document, project=project))
                 return
             if parsed.path == "/documents":
-                self._send_html(app.render_documents())
+                params = parse_qs(parsed.query)
+                self._send_html(
+                    app.render_documents(
+                        query=params.get("q", [""])[0],
+                        sort=params.get("sort", ["latest"])[0],
+                        ai_status=params.get("ai_status", [""])[0],
+                        project_id=params.get("project_id", [""])[0],
+                    )
+                )
                 return
             if parsed.path == "/projects":
                 self._send_html(app.render_projects())

@@ -118,6 +118,20 @@ Ett manuellt Document saknar digital originalfil men fungerar ändå som context
 
 Nya manuellt skapade Documents hamnar i Inbox med status `new`.
 
+## Document-överblick
+
+Sidan `/documents` visar registrerade Documents med titel, upphov och utgivningsår när dessa finns. Varje rad visar också om dokumentet har minst en slutförd AI-analys samt hur många egna användarskapade Captures som är kopplade till dokumentet.
+
+Överblicken kan filtreras på:
+
+* snabb sökning i titel, upphov och utgivningsår,
+* AI-analyserade eller ej AI-analyserade Documents,
+* Project-koppling.
+
+Snabbsökningen söker bara i Document-metadata. Den söker inte i extraherad dokumenttext, Captures, Claims, Insights eller Questions.
+
+Listan kan sorteras på titel, utgivningsår eller senast tillagd. Standardordningen är senast tillagd först. Sortering på utgivningsår visar dokument med årtal före dokument utan årtal och nyare årtal först.
+
 ## PDF-import
 
 Placera en PDF i den konfigurerade `ingest_source`.

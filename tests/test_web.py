@@ -6,6 +6,7 @@ import threading
 import unittest
 from pathlib import Path
 
+from dokumentverkstad.ai import AiRunRecord
 from dokumentverkstad.archive import Archive
 from dokumentverkstad.ingest import calculate_checksum
 from dokumentverkstad.web import CaptureApp, make_handler
@@ -985,6 +986,139 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Andens fenomenologi", html)
             self.assertIn('action="/documents"', html)
 
+    def test_documents_overview_filters_by_metadata_only(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            matching = archive.create_document(
+                "Nationell biblioteksstrategi",
+                author="Kungliga biblioteket",
+                year="2024",
+            )
+            other = archive.create_document("Kommunal rapport", author="Stad")
+            archive.create_knowledge_object(
+                "needle bara i capture", document_id=other.id
+            )
+            app = CaptureApp(archive)
+
+            self.assertIn(matching.title, app.render_documents(query="biblioteks"))
+            self.assertIn(matching.title, app.render_documents(query="kungliga"))
+            self.assertIn(matching.title, app.render_documents(query="2024"))
+            html = app.render_documents(query="needle")
+
+            self.assertNotIn(matching.title, html)
+            self.assertNotIn(other.title, html)
+            self.assertIn("Inga dokument ännu.", html)
+
+    def test_documents_overview_sorts_by_title_and_year(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            archive.create_document("Zeta", year="2020")
+            archive.create_document("Alfa", year="2023")
+            archive.create_document("Beta")
+            app = CaptureApp(archive)
+
+            by_title = app.render_documents(sort="title")
+            self.assertLess(by_title.index("Alfa"), by_title.index("Beta"))
+            self.assertLess(by_title.index("Beta"), by_title.index("Zeta"))
+
+            by_year = app.render_documents(sort="year")
+            self.assertLess(by_year.index("Alfa"), by_year.index("Zeta"))
+            self.assertLess(by_year.index("Zeta"), by_year.index("Beta"))
+
+    def test_documents_overview_filters_by_ai_status_and_project(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Prioriterat")
+            analyzed = archive.create_document("Analyserad")
+            unanalyzed = archive.create_document("Ej analyserad")
+            outside_project = archive.create_document("Utanför projekt")
+            archive.save_document(analyzed.with_projects((project.id,)))
+            archive.save_document(unanalyzed.with_projects((project.id,)))
+            _save_completed_ai_run(archive, analyzed.id)
+            _save_completed_ai_run(archive, outside_project.id)
+            app = CaptureApp(archive)
+
+            html = app.render_documents(ai_status="analyzed", project_id=project.id)
+
+            self.assertIn("Analyserad", html)
+            self.assertNotIn("Ej analyserad", html)
+            self.assertNotIn("Utanför projekt", html)
+            self.assertIn("AI-analyserad", html)
+            self.assertIn("Prioriterat", html)
+
+    def test_documents_overview_shows_list_metadata_without_visible_ids(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document(
+                "Årsrapport", author="Biblioteket", year="2024"
+            )
+            archive.create_knowledge_object("Egen capture", document_id=document.id)
+            archive.create_knowledge_object(
+                "AI-accepterad text",
+                creator="user_after_ai",
+                document_id=document.id,
+            )
+            _save_completed_ai_run(archive, document.id)
+            app = CaptureApp(archive)
+
+            html = app.render_documents()
+
+            self.assertIn("Årsrapport", html)
+            self.assertIn("Biblioteket", html)
+            self.assertIn("2024", html)
+            self.assertIn("AI-analyserad", html)
+            self.assertIn("1 egen capture", html)
+            self.assertNotIn("2 egna captures", html)
+            self.assertNotIn(f">{document.id}<", html)
+            self.assertNotIn("ID:", html)
+
+    def test_documents_overview_uses_bounded_archive_reads(self) -> None:
+        class CountingArchive(Archive):
+            knowledge_reads = 0
+            ai_run_reads = 0
+
+            def list_knowledge_objects(self):  # type: ignore[no-untyped-def]
+                self.knowledge_reads += 1
+                return super().list_knowledge_objects()
+
+            def list_ai_runs(self):  # type: ignore[no-untyped-def]
+                self.ai_run_reads += 1
+                return super().list_ai_runs()
+
+            def extracted_text_file_path(self, document_id: str) -> Path:
+                raise AssertionError("Documents overview must not read full text")
+
+        with workspace_tempdir() as tmp:
+            archive = CountingArchive(Path(tmp) / "archive")
+            archive.create_document("Metadata only")
+            archive.create_knowledge_object("Capture")
+            app = CaptureApp(archive)
+
+            html = app.render_documents(query="metadata")
+
+            self.assertIn("Metadata only", html)
+            self.assertEqual(archive.knowledge_reads, 1)
+            self.assertEqual(archive.ai_run_reads, 1)
+
+    def test_documents_route_accepts_filter_query_parameters(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            archive.create_document("Alfa")
+            archive.create_document("Beta")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                html = _get(server, "/documents?q=alfa&sort=title")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertIn("Alfa", html)
+            self.assertNotIn("Beta", html)
+
     def test_render_document_shows_capture_form_without_redundant_self_context(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -1205,6 +1339,24 @@ def _create_ai_candidate(
         project_ids=project_ids,
         semantic_type=semantic_type,
     )
+
+
+def _save_completed_ai_run(archive: Archive, document_id: str) -> AiRunRecord:
+    run = AiRunRecord(
+        id=f"airun_test_{document_id}",
+        document_id=document_id,
+        provider="mock",
+        model="mock-model",
+        prompt_version="test",
+        capabilities=("Summary",),
+        created_at="2024-01-01T00:00:00+00:00",
+        status="completed",
+        estimated_input_tokens=0,
+        estimated_output_tokens=0,
+        estimated_cost=0.0,
+    )
+    archive.save_ai_run(run)
+    return run
 
 
 if __name__ == "__main__":
