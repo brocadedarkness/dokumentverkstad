@@ -197,7 +197,7 @@ class CaptureApp:
     def render_documents(
         self,
         query: str = "",
-        sort: str = "latest",
+        sort: str = "year",
         ai_status: str = "",
         project_id: str = "",
     ) -> str:
@@ -217,7 +217,7 @@ class CaptureApp:
         if not rendered_documents:
             rendered_documents = "<li>Inga dokument ännu.</li>"
 
-        selected_sort = sort if sort in {"latest", "title", "year"} else "latest"
+        selected_sort = sort if sort in {"latest", "title", "year"} else "year"
         selected_ai_status = (
             ai_status if ai_status in {"analyzed", "not_analyzed"} else ""
         )
@@ -233,15 +233,7 @@ class CaptureApp:
             title="Documents",
             body=f"""
     <h1>Documents</h1>
-    <form method="post" action="/documents">
-      <label for="title">Titel</label>
-      <input id="title" name="title" type="text" required>
-      <label for="author">Upphov</label>
-      <input id="author" name="author" type="text">
-      <label for="year">Utgivningsår</label>
-      <input id="year" name="year" type="text" inputmode="numeric" pattern="\\d{{4}}">
-      <button type="submit">Skapa document</button>
-    </form>
+    <p><a href="/documents/new">Skapa Document manuellt</a></p>
     <h2>Registrerade documents</h2>
     <form id="documents-filter" method="get" action="/documents">
       <label for="document-filter-q">Sök</label>
@@ -269,6 +261,24 @@ class CaptureApp:
       {rendered_documents}
     </ul>
     <p><a href="/capture">Capture utan dokument</a></p>
+""",
+        )
+
+    def render_new_document(self) -> str:
+        return self._page(
+            title="Skapa Document manuellt",
+            body="""
+    <p><a href="/documents">Documents</a></p>
+    <h1>Skapa Document manuellt</h1>
+    <form method="post" action="/documents">
+      <label for="title">Titel</label>
+      <input id="title" name="title" type="text" required>
+      <label for="author">Upphov</label>
+      <input id="author" name="author" type="text">
+      <label for="year">Utgivningsår</label>
+      <input id="year" name="year" type="text" inputmode="numeric" pattern="\\d{4}">
+      <button type="submit">Skapa document</button>
+    </form>
 """,
         )
 
@@ -1816,11 +1826,14 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 self._send_html(
                     app.render_documents(
                         query=params.get("q", [""])[0],
-                        sort=params.get("sort", ["latest"])[0],
+                        sort=params.get("sort", ["year"])[0],
                         ai_status=params.get("ai_status", [""])[0],
                         project_id=params.get("project_id", [""])[0],
                     )
                 )
+                return
+            if parsed.path == "/documents/new":
+                self._send_html(app.render_new_document())
                 return
             if parsed.path == "/projects":
                 self._send_html(app.render_projects())

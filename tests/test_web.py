@@ -984,7 +984,8 @@ class CaptureAppTests(unittest.TestCase):
             html = app.render_documents()
 
             self.assertIn("Andens fenomenologi", html)
-            self.assertIn('action="/documents"', html)
+            self.assertIn('href="/documents/new"', html)
+            self.assertNotIn('<form method="post" action="/documents">', html)
 
     def test_documents_overview_filters_by_metadata_only(self) -> None:
         with workspace_tempdir() as tmp:
@@ -1017,6 +1018,10 @@ class CaptureAppTests(unittest.TestCase):
             archive.create_document("Beta")
             app = CaptureApp(archive)
 
+            default_html = app.render_documents()
+            self.assertLess(default_html.index("Alfa"), default_html.index("Zeta"))
+            self.assertLess(default_html.index("Zeta"), default_html.index("Beta"))
+
             by_title = app.render_documents(sort="title")
             self.assertLess(by_title.index("Alfa"), by_title.index("Beta"))
             self.assertLess(by_title.index("Beta"), by_title.index("Zeta"))
@@ -1024,6 +1029,33 @@ class CaptureAppTests(unittest.TestCase):
             by_year = app.render_documents(sort="year")
             self.assertLess(by_year.index("Alfa"), by_year.index("Zeta"))
             self.assertLess(by_year.index("Zeta"), by_year.index("Beta"))
+
+    def test_manual_document_creation_is_available_on_secondary_page(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                overview_html = _get(server, "/documents")
+                new_html = _get(server, "/documents/new")
+                status, location = _post(
+                    server,
+                    "/documents",
+                    "title=Manuellt+document&author=Bibliotek&year=2024",
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertIn('href="/documents/new"', overview_html)
+            self.assertNotIn('<form method="post" action="/documents">', overview_html)
+            self.assertIn('<form method="post" action="/documents">', new_html)
+            self.assertEqual(status, 303)
+            self.assertTrue(location.startswith("/documents/doc_"))
+            self.assertEqual(archive.list_documents()[0].title, "Manuellt document")
 
     def test_documents_overview_filters_by_ai_status_and_project(self) -> None:
         with workspace_tempdir() as tmp:

@@ -107,7 +107,7 @@ Dropbox, iCloud eller liknande kan användas genom att deras klient synkar filer
 Öppna:
 
 ```text
-/documents
+/documents/new
 ```
 
 Ange en titel och skapa dokumentet.
@@ -130,7 +130,9 @@ Sidan `/documents` visar registrerade Documents med titel, upphov och utgivnings
 
 Snabbsökningen söker bara i Document-metadata. Den söker inte i extraherad dokumenttext, Captures, Claims, Insights eller Questions.
 
-Listan kan sorteras på titel, utgivningsår eller senast tillagd. Standardordningen är senast tillagd först. Sortering på utgivningsår visar dokument med årtal före dokument utan årtal och nyare årtal först.
+Listan kan sorteras på titel, utgivningsår eller senast tillagd. Standardordningen är utgivningsår: dokument med årtal visas före dokument utan årtal och nyare årtal visas först.
+
+Manuell Document-registrering finns kvar som en sekundär ingång via länken "Skapa Document manuellt".
 
 ## PDF-import
 
