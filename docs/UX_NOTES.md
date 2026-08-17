@@ -765,3 +765,15 @@ Efter genomförd AI-körning kommer man tillbaka till inboxen, och behöver om d
 **Bedömning**
 
 Testa att istället låta användaren komma tillbaka till documents-sidan efter genomförd AI-körning. Vill inte användaren gå igenom körningen direkt, får den status "senare" och ligger då kvar i inboxen.
+
+# 2026-08-17
+
+## Erfarenheter efter iteration 7.2
+
+### Documents
+
+Utgivningsår bör vara default i sorteringen av documents-vyn, inte Senast tillagd.
+
+### Projects
+
+Projects används som användarcentrerade sammanhang snarare än som en konsekvent ämnesklassifikation. Ett Project uttrycker i första hand varför ett Document är relevant för mitt arbete, inte vad dokumentet objektivt handlar om. Under genomgången av det importerade arkivet uppstår en tendens att vilja Project-klassificera alla Documents, vilket riskerar att skapa ett stort antal Projects med oklar funktion. Det kan vara bättre att låta Documents sakna Project tills ett faktiskt användningssammanhang uppstår. Det behöver observeras vidare innan Project-modellen förändras eller en separat tagg-/ämnesmodell övervägs.
