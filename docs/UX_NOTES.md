@@ -757,3 +757,11 @@ AI-körningar blockerar HTTP-requesten. Ett verkligt AI-anrop tog cirka 86 sekun
 **Bedömning**
 
 AI-analys bör köras som ett bakgrundsjobb så att webbgränssnittet förblir responsivt under analysen.
+
+### Gränssnittsinteraktionen vid AI-körningar
+
+Efter genomförd AI-körning kommer man tillbaka till inboxen, och behöver om det är många dokument leta för att hitta körningen för att gå igenom dem.
+
+**Bedömning**
+
+Testa att istället låta användaren komma tillbaka till documents-sidan efter genomförd AI-körning. Vill inte användaren gå igenom körningen direkt, får den status "senare" och ligger då kvar i inboxen.

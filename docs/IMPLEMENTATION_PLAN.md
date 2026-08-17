@@ -742,6 +742,190 @@ Iteration 7.1 är klar när följande scenario fungerar:
 
 > Anders importerar ett dokument vars filnamn innehåller utgivningsår och titel. Dokumentverkstad registrerar användbar metadata som Anders senare kan korrigera eller komplettera. Under läsningen upptäcker han att en tidigare Capture innehåller en felaktig sidhänvisning och rättar den genom gränssnittet utan att den tidigare historiken förloras. Han kan också korrigera ett tidigare felaktigt AI-review-beslut. Det normala webbflödet innehåller inga kända oförklarliga blockeringar.
 
+# Iteration 7.2 – Dokumentöverblick
+
+## Syfte
+
+Efter import av ett större befintligt dokumentarkiv har Documents-vyn blivit en central del av det dagliga arbetsflödet.
+
+Dokumentverkstad används inte längre bara för att registrera och bearbeta enstaka nya dokument, utan också för att orientera sig bland ett växande antal tidigare importerade Documents och hitta tillbaka till relevant material.
+
+Iteration 7.2 ska göra Documents-vyn användbar som överblick och navigationsyta även när arkivet innehåller hundratals dokument.
+
+Iterationen ska samtidigt säkerställa att listningen förblir snabb när Archive växer.
+
+Detta är inte en generell redesign av Dokumentverkstad och inte en implementation av fulltextsökning.
+
+## Arbetsflöde
+
+Användaren öppnar Documents-vyn för att hitta ett dokument.
+
+Det ska gå att:
+
+- snabbt filtrera listan genom att börja skriva delar av titel eller upphov,
+- sortera dokument efter relevanta egenskaper,
+- filtrera på bearbetningsstatus,
+- filtrera på Project,
+- direkt i listan se central metadata och hur mycket dokumentet har bearbetats.
+
+Exempel:
+
+Om användaren skriver:
+
+`digital`
+
+ska listan kunna begränsas till dokument med titlar som:
+
+- `Digitala böcker ...`
+- `Digital välfärdsutveckling ...`
+
+utan att någon sökning görs i dokumentens fulltext.
+
+Filter och sortering ska kunna kombineras där det är naturligt.
+
+## Snabbfilter
+
+Documents-vyn ska innehålla ett enkelt snabbfilter.
+
+Snabbfiltret ska:
+
+- vara case-insensitive,
+- matcha delsträngar,
+- minst kunna matcha titel och upphov,
+- kunna användas utan att användaren behöver formulera en särskild sökfråga.
+
+Det är önskvärt att listan filtreras medan användaren skriver, om detta kan implementeras enkelt och robust.
+
+Snabbfiltret är ett filter över Document-metadata.
+
+Det ska inte söka i:
+
+- extraherad dokumenttext,
+- Captures,
+- Claims,
+- Insights,
+- Questions.
+
+Fulltextsökning och semantisk sökning ligger utanför denna iteration.
+
+## Sortering
+
+Documents ska kunna sorteras efter åtminstone:
+
+- titel,
+- utgivningsår,
+- senast tillagt.
+
+Sorteringsordningen ska vara tydlig och reproducerbar.
+
+En rimlig standardordning ska väljas utifrån det befintliga arbetsflödet.
+
+## Filtrering
+
+Documents-vyn ska kunna filtreras på åtminstone:
+
+- AI-analyserad / inte AI-analyserad,
+- Project.
+
+Överväg om det går att uttrycka en enkel bearbetningsstatus utifrån redan befintliga data, exempelvis:
+
+- inga Captures och ingen AI-analys,
+- AI-analyserad,
+- egna Captures finns.
+
+Inför inte en ny permanent Document Status-modell enbart för detta.
+
+Om en användbar status kan härledas från befintliga data ska den betraktas som presentationsdata.
+
+## Information i listan
+
+Varje Document i listan ska visa tillräckligt med information för att användaren ska kunna identifiera och orientera sig kring dokumentet utan att först öppna det.
+
+Visa åtminstone:
+
+- titel,
+- utgivningsår när det finns,
+- upphov när det finns,
+- om AI-analys har genomförts,
+- antal användarskapade Captures/Knowledge Objects kopplade till dokumentet.
+
+Interna ID:n ska inte visas i den normala listvyn.
+
+Presentationens exakta visuella utformning behöver inte slutdesignas i denna iteration.
+
+## Prestanda
+
+Efter att Archive vuxit till hundratals Documents har vissa lokala GET-requests tagit omkring 1–2 sekunder.
+
+Documents-vyn ska inte behöva göra omfattande genomläsningar av Archive för varje request om informationen kan hämtas effektivare från Runtime/index.
+
+Undersök vilka data som idag läses eller beräknas vid rendering av Documents-vyn.
+
+Använd eller utöka det befintliga återskapbara Runtime-indexet där detta ger en tydlig prestandavinst.
+
+Archive ska fortsatt vara systemets auktoritativa datakälla.
+
+Runtime/index får endast innehålla information som kan återskapas från Archive.
+
+Ingen information får existera enbart i indexet.
+
+Det ska fortsatt gå att radera Runtime/index och återskapa det från Archive.
+
+## Infrastruktur
+
+Iterationen kan kräva:
+
+- utökning av befintligt Runtime/SQLite-index,
+- indexering av Document-metadata,
+- härledda räknare eller statusuppgifter för listvyn,
+- effektiva frågor för filtrering och sortering.
+
+Inför inte en separat sökmotor eller extern söktjänst.
+
+## Avgränsning
+
+Iteration 7.2 ska inte implementera:
+
+- fulltextsökning i PDF-text,
+- sökning i Captures eller andra Knowledge Objects,
+- semantisk sökning,
+- embeddings,
+- RAG,
+- ny permanent Document Status-modell,
+- nya relationstyper mellan Documents,
+- större redesign av Documents-vyn,
+- generell visuell redesign,
+- mobilanpassning,
+- MCP,
+- Iteration 8-funktionalitet,
+- Iteration 9:s övergripande UX-konsolidering.
+
+Dessa frågor hanteras separat.
+
+## Tester
+
+Iterationen är godkänd när:
+
+- snabbfiltret hittar Documents genom delsträngar i titel,
+- snabbfiltret är case-insensitive,
+- upphov kan användas för filtrering,
+- sortering på titel fungerar,
+- sortering på utgivningsår fungerar,
+- sortering på senast tillagt fungerar,
+- AI-analyserade och icke AI-analyserade Documents kan skiljas åt,
+- Documents kan filtreras på Project,
+- antal Captures visas korrekt,
+- befintliga Documents utan fullständig metadata fortfarande visas korrekt,
+- listdata kan återskapas från Archive efter att Runtime/index raderats,
+- listningen inte kräver onödiga fullständiga genomläsningar av Archive,
+- hela den befintliga testsviten fortfarande passerar.
+
+## Klart när
+
+Iteration 7.2 är klar när följande scenario fungerar:
+
+> Anders öppnar Documents-vyn i ett arkiv med hundratals Documents. Han börjar skriva `digital` och listan begränsas snabbt till dokument vars metadata matchar texten. Han kan kombinera detta med att exempelvis visa dokument inom ett visst Project eller dokument som ännu inte AI-analyserats. I listan ser han titel, år, upphov, AI-status och hur många egna Captures som finns kring varje dokument. Han kan sortera resultatet och öppna rätt dokument utan att först behöva gå igenom en lång osorterad lista. Documents-vyn förblir snabb även när Archive växer.
+
 # Iteration 8 – Låt Dokumentverkstad bli vardag
 
 ## Syfte
