@@ -5,8 +5,11 @@ import io
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from zipfile import ZipFile
 
+from dokumentverkstad.archive import Archive
 from dokumentverkstad.cli import main
+from dokumentverkstad.index import list_indexed_documents
 from dokumentverkstad.secrets import decrypt_secrets_file, initialize_encrypted_secrets
 from dokumentverkstad.web import main as web_main
 from helpers import workspace_tempdir
@@ -116,6 +119,84 @@ class CliTests(unittest.TestCase):
             self.assertIn("Krypterade secrets:", output)
             self.assertIn("OpenAI credential:", output)
             self.assertNotIn("sk-legacy-secret", output)
+
+    def test_backup_command_creates_zip_and_reports_counts(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config_path = root / "dokumentverkstad.toml"
+            main(["--config", str(config_path), "init"])
+            Archive(root / ".dokumentverkstad" / "archive").create_document("CLI backup")
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                main(
+                    [
+                        "--config",
+                        str(config_path),
+                        "backup",
+                        "--output-dir",
+                        str(root / "backups"),
+                    ]
+                )
+
+            output = stdout.getvalue()
+            self.assertIn("Backup skapad:", output)
+            self.assertIn("Documents: 1", output)
+            backups = list((root / "backups").glob("dokumentverkstad-backup-*.zip"))
+            self.assertEqual(len(backups), 1)
+            with ZipFile(backups[0]) as backup:
+                self.assertIn("backup-manifest.json", backup.namelist())
+
+    def test_restore_command_restores_archive_and_rebuilds_index(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            source_config = root / "source.toml"
+            source_archive = root / "source-archive"
+            source_runtime = root / "source-runtime"
+            source_ingest = root / "source-ingest"
+            source_config.write_text(
+                "\n".join(
+                    [
+                        'archive_root = "source-archive"',
+                        'runtime_root = "source-runtime"',
+                        'ingest_source = "source-ingest"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            Archive(source_archive).create_document("CLI restore")
+            main(
+                [
+                    "--config",
+                    str(source_config),
+                    "backup",
+                    "--output-dir",
+                    str(root),
+                ]
+            )
+            backup_path = next(root.glob("dokumentverkstad-backup-*.zip"))
+            target_config = root / "target.toml"
+            target_config.write_text(
+                "\n".join(
+                    [
+                        'archive_root = "target-archive"',
+                        'runtime_root = "target-runtime"',
+                        'ingest_source = "target-ingest"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                main(["--config", str(target_config), "restore", str(backup_path)])
+
+            self.assertIn("Backup återställd:", stdout.getvalue())
+            self.assertEqual(Archive(root / "target-archive").list_documents()[0].title, "CLI restore")
+            self.assertEqual(
+                [row["title"] for row in list_indexed_documents(root / "target-runtime")],
+                ["CLI restore"],
+            )
 
     def test_secrets_set_and_remove_openai(self) -> None:
         with workspace_tempdir() as tmp:

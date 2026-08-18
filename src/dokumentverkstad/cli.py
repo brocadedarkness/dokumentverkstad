@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 from .archive import Archive
+from .backup import BackupError, create_backup, restore_backup
 from .config import (
     AppConfig,
     ConfigurationError,
@@ -48,6 +49,13 @@ def main(argv: list[str] | None = None) -> None:
     secrets_subparsers.add_parser("init")
     secrets_subparsers.add_parser("set-openai")
     secrets_subparsers.add_parser("remove-openai")
+
+    backup_parser = subparsers.add_parser("backup")
+    backup_parser.add_argument("--output-dir", help="Katalog där backupfilen skapas")
+
+    restore_parser = subparsers.add_parser("restore")
+    restore_parser.add_argument("backup_file")
+    restore_parser.add_argument("--force", action="store_true")
 
     subparsers.add_parser("process-ingest")
     subparsers.add_parser("rebuild-index")
@@ -94,11 +102,28 @@ def main(argv: list[str] | None = None) -> None:
             )
             return
 
+        if command == "backup":
+            result = create_backup(config, output_dir=args.output_dir)
+            print("Backup skapad:")
+            print(result.path)
+            _print_counts(result.counts)
+            print(f"Storlek: {result.size_bytes} bytes")
+            return
+
+        if command == "restore":
+            result = restore_backup(args.backup_file, config, force=args.force)
+            print("Backup återställd:")
+            print(f"Archive: {result.archive_root}")
+            print(f"Index återskapat: {result.index_path}")
+            _print_counts(result.counts)
+            print("Secrets återställdes inte.")
+            return
+
         if command == "rebuild-index":
             database_path = rebuild_document_index(archive, config.runtime_root)
             print(f"Index återskapat: {database_path}")
             return
-    except (ConfigurationError, SecretsError) as error:
+    except (ConfigurationError, SecretsError, BackupError) as error:
         print(error, file=sys.stderr)
         raise SystemExit(2) from error
 
@@ -174,6 +199,12 @@ def _print_status(config: AppConfig, config_path: str | None) -> None:
     if config.secrets_path.exists():
         print("Legacy secrets.toml: finns (lämnas oförändrad)")
     print(f"OpenAI credential: {_credential_status(config)}")
+
+def _print_counts(counts: object) -> None:
+    print(f"Documents: {counts.documents}")
+    print(f"Knowledge Objects: {counts.knowledge_objects}")
+    print(f"Projects: {counts.projects}")
+    print(f"AI runs: {counts.ai_runs}")
 
 
 def _credential_status(config: AppConfig) -> str:
