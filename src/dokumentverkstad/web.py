@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from getpass import getpass
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -31,7 +32,12 @@ from .config import AppConfig, ensure_app_directories, load_config
 from .document import Document
 from .knowledge import KnowledgeObject
 from .project import Project
-from .secrets import load_openai_api_key
+from .secrets import (
+    SecretsError,
+    encrypted_secrets_exists,
+    load_openai_api_key,
+    unlock_encrypted_secrets,
+)
 from .statistics import (
     AiStatistics,
     CandidateReviewSummary,
@@ -68,6 +74,11 @@ class CaptureApp:
         )
         self.secrets_path = (
             config.secrets_path if config else archive.root.parent / "secrets.toml"
+        )
+        self.encrypted_secrets_path = (
+            config.encrypted_secrets_path
+            if config
+            else archive.root.parent / "secrets.enc"
         )
         self.log = log
         self.slow_request_threshold_seconds = slow_request_threshold_seconds
@@ -466,10 +477,13 @@ class CaptureApp:
             return self.render_ai_message(document, str(error))
 
         credential_note = ""
-        if self.ai_provider_name == "openai" and not load_openai_api_key(self.secrets_path):
+        if self.ai_provider_name == "openai" and not load_openai_api_key(
+            self.secrets_path,
+            self.encrypted_secrets_path,
+        ):
             credential_note = (
                 "<p>Ingen OpenAI API-nyckel är konfigurerad. "
-                "Lägg till OPENAI_API_KEY eller .dokumentverkstad/secrets.toml innan AI kan köras.</p>"
+                "Lägg till OPENAI_API_KEY eller initiera krypterade secrets innan AI kan köras.</p>"
             )
 
         return self._page(
@@ -1383,7 +1397,9 @@ class CaptureApp:
         if self.ai_provider_name == "mock":
             return MockAiProvider()
         if self.ai_provider_name == "openai":
-            return OpenAiProvider(load_openai_api_key(self.secrets_path))
+            return OpenAiProvider(
+                load_openai_api_key(self.secrets_path, self.encrypted_secrets_path)
+            )
         raise MissingCredentialError("Ingen känd AI-provider är konfigurerad.")
 
     def _semantic_type_for_capability(self, capability: str) -> str:
@@ -2079,9 +2095,24 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
-def main(config_path: str | None = None) -> None:
+def unlock_configured_secrets(config: AppConfig, password: str | None = None) -> None:
+    if not encrypted_secrets_exists(config.encrypted_secrets_path):
+        return
+    entered_password = (
+        password
+        if password is not None
+        else getpass("Adminlösenord för Dokumentverkstad secrets: ")
+    )
+    unlock_encrypted_secrets(config.encrypted_secrets_path, entered_password)
+
+
+def main(config_path: str | None = None, password: str | None = None) -> None:
     config = load_config(config_path)
     ensure_app_directories(config)
+    try:
+        unlock_configured_secrets(config, password=password)
+    except SecretsError as error:
+        raise SystemExit(str(error)) from error
     app = CaptureApp(Archive(config.archive_root), config=config, log=print)
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
     print(f"Dokumentverkstad Capture körs på http://{config.host}:{config.port}/")

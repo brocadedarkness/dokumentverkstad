@@ -273,7 +273,7 @@ class OpenAiProvider(AiProvider):
     def __init__(self, api_key: str):
         if not api_key:
             raise MissingCredentialError(
-                "AI-provider saknar API-nyckel. Lägg till OPENAI_API_KEY eller .dokumentverkstad/secrets.toml."
+                "AI-provider saknar API-nyckel. Lägg till OPENAI_API_KEY eller initiera krypterade secrets."
             )
         self.api_key = api_key
 

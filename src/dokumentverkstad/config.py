@@ -20,6 +20,7 @@ class AppConfig:
     ai_currency: str = "USD"
     ai_cost_limit: float = 0.0
     secrets_path: Path = Path(".dokumentverkstad/secrets.toml")
+    encrypted_secrets_path: Path = Path(".dokumentverkstad/secrets.enc")
 
 
 class ConfigurationError(Exception):
@@ -42,6 +43,9 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     ai_currency = str(data.get("ai_currency", "USD"))
     ai_cost_limit = float(data.get("ai_cost_limit", 0.0))
     secrets_path = Path(data.get("secrets_path", ".dokumentverkstad/secrets.toml"))
+    encrypted_secrets_path = Path(
+        data.get("encrypted_secrets_path", ".dokumentverkstad/secrets.enc")
+    )
 
     base = path.parent if path else Path.cwd()
     return AppConfig(
@@ -57,6 +61,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         ai_currency=ai_currency,
         ai_cost_limit=ai_cost_limit,
         secrets_path=_resolve_path(base, secrets_path),
+        encrypted_secrets_path=_resolve_path(base, encrypted_secrets_path),
     )
 
 
@@ -64,6 +69,40 @@ def ensure_app_directories(config: AppConfig) -> None:
     ensure_directory(config.archive_root, "archive_root")
     ensure_directory(config.runtime_root, "runtime_root")
     ensure_directory(config.ingest_source, "ingest_source")
+
+
+def default_config_path() -> Path:
+    return Path("dokumentverkstad.toml").resolve()
+
+
+def write_default_config(config_path: str | Path, overwrite: bool = False) -> Path:
+    path = Path(config_path).expanduser().resolve()
+    if path.exists() and not overwrite:
+        return path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(default_config_text(), encoding="utf-8")
+    return path
+
+
+def default_config_text() -> str:
+    return "\n".join(
+        [
+            'archive_root = ".dokumentverkstad/archive"',
+            'runtime_root = ".dokumentverkstad/runtime"',
+            'ingest_source = ".dokumentverkstad/ingest"',
+            'host = "127.0.0.1"',
+            "port = 8000",
+            'ai_provider = "openai"',
+            'ai_model = "gpt-5.6-luna"',
+            "ai_max_output_tokens = 6000",
+            'ai_output_language = "sv"',
+            'ai_currency = "USD"',
+            "ai_cost_limit = 0.0",
+            'encrypted_secrets_path = ".dokumentverkstad/secrets.enc"',
+            'secrets_path = ".dokumentverkstad/secrets.toml"',
+            "",
+        ]
+    )
 
 
 def ensure_directory(path: str | Path, parameter_name: str) -> Path:

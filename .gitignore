@@ -14,6 +14,7 @@ __pycache__/
 
 # Local secrets
 .dokumentverkstad/secrets.toml
+.dokumentverkstad/secrets.enc
 
 # Eventuella loggar
 .dokumentverkstad/logs/

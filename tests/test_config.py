@@ -30,6 +30,7 @@ class ConfigTests(unittest.TestCase):
                         'ai_model = "test-model"',
                         "ai_max_output_tokens = 4321",
                         'secrets_path = "local-secrets.toml"',
+                        'encrypted_secrets_path = "local-secrets.enc"',
                     ]
                 ),
                 encoding="utf-8",
@@ -47,6 +48,10 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.ai_max_output_tokens, 4321)
             self.assertEqual(
                 config.secrets_path, (Path(tmp) / "local-secrets.toml").resolve()
+            )
+            self.assertEqual(
+                config.encrypted_secrets_path,
+                (Path(tmp) / "local-secrets.enc").resolve(),
             )
 
     def test_loads_config_file_with_utf8_bom(self) -> None:
@@ -80,6 +85,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(
             config.ingest_source,
             (Path.cwd() / ".dokumentverkstad" / "ingest").resolve(),
+        )
+        self.assertEqual(
+            config.encrypted_secrets_path,
+            (Path.cwd() / ".dokumentverkstad" / "secrets.enc").resolve(),
         )
 
     def test_missing_configured_directories_are_created(self) -> None:

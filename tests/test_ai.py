@@ -26,7 +26,16 @@ from dokumentverkstad.ai import (
 from dokumentverkstad.archive import Archive
 from dokumentverkstad.config import AppConfig
 from dokumentverkstad.ingest import calculate_checksum
-from dokumentverkstad.secrets import load_openai_api_key
+from dokumentverkstad.secrets import (
+    SecretsError,
+    clear_unlocked_secrets,
+    decrypt_secrets_file,
+    encrypt_secrets_file,
+    initialize_encrypted_secrets,
+    load_openai_api_key,
+    read_encrypted_envelope,
+    unlock_encrypted_secrets,
+)
 from dokumentverkstad.web import CaptureApp
 from helpers import workspace_tempdir, write_minimal_pdf
 
@@ -239,6 +248,113 @@ class AiTests(unittest.TestCase):
                     os.environ["OPENAI_API_KEY"] = previous
 
             self.assertEqual(key, "file-key")
+
+    def test_encrypted_secrets_do_not_store_plaintext_and_can_be_unlocked(self) -> None:
+        with workspace_tempdir() as tmp:
+            secrets_path = Path(tmp) / ".dokumentverkstad" / "secrets.enc"
+
+            initialize_encrypted_secrets(
+                secrets_path,
+                "correct horse battery staple",
+                openai_api_key="sk-secret-value",
+            )
+            raw = secrets_path.read_text(encoding="utf-8")
+            payload = decrypt_secrets_file(
+                secrets_path, "correct horse battery staple"
+            )
+
+            self.assertNotIn("sk-secret-value", raw)
+            self.assertNotIn("correct horse battery staple", raw)
+            self.assertEqual(
+                payload["providers"]["openai"]["api_key"], "sk-secret-value"
+            )
+
+    def test_encrypted_secrets_fail_with_wrong_password(self) -> None:
+        with workspace_tempdir() as tmp:
+            secrets_path = Path(tmp) / ".dokumentverkstad" / "secrets.enc"
+            initialize_encrypted_secrets(secrets_path, "right", "sk-secret-value")
+
+            with self.assertRaises(SecretsError):
+                decrypt_secrets_file(secrets_path, "wrong")
+
+    def test_encrypted_secrets_fail_when_ciphertext_is_tampered(self) -> None:
+        with workspace_tempdir() as tmp:
+            secrets_path = Path(tmp) / ".dokumentverkstad" / "secrets.enc"
+            initialize_encrypted_secrets(secrets_path, "right", "sk-secret-value")
+            envelope = read_encrypted_envelope(secrets_path)
+            envelope["ciphertext"] = envelope["ciphertext"][:-4] + "AAAA"
+            secrets_path.write_text(json.dumps(envelope), encoding="utf-8")
+
+            with self.assertRaises(SecretsError):
+                decrypt_secrets_file(secrets_path, "right")
+
+    def test_encrypted_secrets_use_unique_salt_and_nonce(self) -> None:
+        with workspace_tempdir() as tmp:
+            first_path = Path(tmp) / "first.enc"
+            second_path = Path(tmp) / "second.enc"
+
+            encrypt_secrets_file(first_path, {"providers": {}}, "password")
+            encrypt_secrets_file(second_path, {"providers": {}}, "password")
+            first = read_encrypted_envelope(first_path)
+            second = read_encrypted_envelope(second_path)
+
+            self.assertEqual(first["version"], 1)
+            self.assertEqual(first["kdf"], "scrypt")
+            self.assertEqual(first["cipher"], "AES-256-GCM")
+            self.assertNotEqual(first["salt"], second["salt"])
+            self.assertNotEqual(first["nonce"], second["nonce"])
+            self.assertNotEqual(first["ciphertext"], second["ciphertext"])
+
+    def test_environment_overrides_unlocked_encrypted_and_legacy_secrets(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp) / ".dokumentverkstad"
+            encrypted_path = root / "secrets.enc"
+            legacy_path = root / "secrets.toml"
+            initialize_encrypted_secrets(
+                encrypted_path,
+                "password",
+                openai_api_key="encrypted-key",
+            )
+            legacy_path.write_text(
+                '[openai]\napi_key = "legacy-key"\n', encoding="utf-8"
+            )
+            unlock_encrypted_secrets(encrypted_path, "password")
+            previous = os.environ.get("OPENAI_API_KEY")
+            os.environ["OPENAI_API_KEY"] = "env-key"
+            try:
+                key = load_openai_api_key(legacy_path, encrypted_path)
+            finally:
+                if previous is None:
+                    os.environ.pop("OPENAI_API_KEY", None)
+                else:
+                    os.environ["OPENAI_API_KEY"] = previous
+                clear_unlocked_secrets()
+
+            self.assertEqual(key, "env-key")
+
+    def test_unlocked_encrypted_secrets_override_legacy_file(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp) / ".dokumentverkstad"
+            encrypted_path = root / "secrets.enc"
+            legacy_path = root / "secrets.toml"
+            initialize_encrypted_secrets(
+                encrypted_path,
+                "password",
+                openai_api_key="encrypted-key",
+            )
+            legacy_path.write_text(
+                '[openai]\napi_key = "legacy-key"\n', encoding="utf-8"
+            )
+            previous = os.environ.pop("OPENAI_API_KEY", None)
+            try:
+                unlock_encrypted_secrets(encrypted_path, "password")
+                key = load_openai_api_key(legacy_path, encrypted_path)
+            finally:
+                clear_unlocked_secrets()
+                if previous is not None:
+                    os.environ["OPENAI_API_KEY"] = previous
+
+            self.assertEqual(key, "encrypted-key")
 
     def test_system_works_without_api_key_and_does_not_expose_key(self) -> None:
         with workspace_tempdir() as tmp:
