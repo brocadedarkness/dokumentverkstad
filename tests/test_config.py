@@ -29,6 +29,7 @@ class ConfigTests(unittest.TestCase):
                         'ai_provider = "mock"',
                         'ai_model = "test-model"',
                         "ai_max_output_tokens = 4321",
+                        "upload_max_bytes = 123456789",
                         'secrets_path = "local-secrets.toml"',
                         'encrypted_secrets_path = "local-secrets.enc"',
                     ]
@@ -46,6 +47,7 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.ai_provider, "mock")
             self.assertEqual(config.ai_model, "test-model")
             self.assertEqual(config.ai_max_output_tokens, 4321)
+            self.assertEqual(config.upload_max_bytes, 123456789)
             self.assertEqual(
                 config.secrets_path, (Path(tmp) / "local-secrets.toml").resolve()
             )
@@ -90,6 +92,7 @@ class ConfigTests(unittest.TestCase):
             config.encrypted_secrets_path,
             (Path.cwd() / ".dokumentverkstad" / "secrets.enc").resolve(),
         )
+        self.assertEqual(config.upload_max_bytes, 250 * 1024 * 1024)
 
     def test_missing_configured_directories_are_created(self) -> None:
         with workspace_tempdir() as tmp:

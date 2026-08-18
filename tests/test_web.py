@@ -8,6 +8,8 @@ from pathlib import Path
 
 from dokumentverkstad.ai import AiProvider, AiProviderError, AiRunRecord
 from dokumentverkstad.archive import Archive
+from dokumentverkstad.config import AppConfig
+from dokumentverkstad.index import list_indexed_documents
 from dokumentverkstad.ingest import calculate_checksum
 from dokumentverkstad.web import CaptureApp, make_handler
 from helpers import workspace_tempdir, write_minimal_pdf
@@ -56,6 +58,33 @@ def _post(server: ThreadingHTTPServer, path: str, body: str) -> tuple[int, str]:
     finally:
         connection.close()
     return response.status, location or response_body
+
+
+def _post_multipart_pdf(
+    server: ThreadingHTTPServer,
+    path: str,
+    filename: str,
+    content: bytes,
+) -> tuple[int, str]:
+    boundary = "----dokumentverkstad-test-boundary"
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="pdf"; filename="{filename}"\r\n'
+        "Content-Type: application/pdf\r\n\r\n"
+    ).encode("utf-8") + content + f"\r\n--{boundary}--\r\n".encode("ascii")
+    connection = HTTPConnection(server.server_address[0], server.server_address[1])
+    try:
+        connection.request(
+            "POST",
+            path,
+            body=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+        response = connection.getresponse()
+        response_body = response.read().decode("utf-8")
+    finally:
+        connection.close()
+    return response.status, response_body
 
 
 class CaptureAppTests(unittest.TestCase):
@@ -1320,6 +1349,206 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn(f"/documents/{document.id}/original", html)
             self.assertIn("rapport.pdf", html)
 
+    def test_upload_page_is_reachable_and_linked_from_inbox(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                inbox = _get(server, "/inbox")
+                upload = _get(server, "/upload")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertIn('href="/upload"', inbox)
+            self.assertIn('type="file"', upload)
+            self.assertIn('accept="application/pdf,.pdf"', upload)
+
+    def test_valid_pdf_upload_creates_document_original_text_inbox_and_index(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            source_pdf = root / "2024 Mobil rapport.pdf"
+            write_minimal_pdf(source_pdf, title="", author="Mobil", text="Upload text")
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, body = _post_multipart_pdf(
+                    server,
+                    "/upload",
+                    "2024 Mobil rapport.pdf",
+                    source_pdf.read_bytes(),
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            archive = Archive(config.archive_root)
+            documents = archive.list_documents()
+            self.assertEqual(status, 200)
+            self.assertIn("Dokumentet har lagts till i Inbox.", body)
+            self.assertEqual(len(documents), 1)
+            self.assertEqual(documents[0].title, "Mobil rapport")
+            self.assertEqual(documents[0].year, "2024")
+            self.assertEqual(documents[0].author, "Mobil")
+            self.assertEqual(documents[0].original_filename, "2024 Mobil rapport.pdf")
+            self.assertEqual(documents[0].inbox_status, "new")
+            self.assertTrue(archive.original_file_path(documents[0].id).exists())
+            self.assertIn(
+                "Upload text",
+                archive.extracted_text_file_path(documents[0].id).read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                [row["title"] for row in list_indexed_documents(config.runtime_root)],
+                ["Mobil rapport"],
+            )
+
+    def test_upload_duplicate_does_not_create_second_document(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            source_pdf = root / "rapport.pdf"
+            write_minimal_pdf(source_pdf, title="Dublett", text="Samma text")
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                _post_multipart_pdf(server, "/upload", "rapport.pdf", source_pdf.read_bytes())
+                status, body = _post_multipart_pdf(
+                    server, "/upload", "rapport.pdf", source_pdf.read_bytes()
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(status, 200)
+            self.assertIn("PDF-filen finns redan i Archive.", body)
+            self.assertEqual(len(Archive(config.archive_root).list_documents()), 1)
+
+    def test_directory_ingest_and_upload_share_checksum_duplicate_semantics(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            config.ingest_source.mkdir(parents=True)
+            source_pdf = config.ingest_source / "rapport.pdf"
+            write_minimal_pdf(source_pdf, title="Katalog först", text="Samma PDF")
+            pdf_bytes = source_pdf.read_bytes()
+            from dokumentverkstad.ingest import process_ingest_source
+
+            process_ingest_source(Archive(config.archive_root), config.ingest_source, config.runtime_root)
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, body = _post_multipart_pdf(
+                    server, "/upload", "rapport.pdf", pdf_bytes
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(status, 200)
+            self.assertIn("PDF-filen finns redan i Archive.", body)
+            self.assertEqual(len(Archive(config.archive_root).list_documents()), 1)
+
+    def test_upload_filename_traversal_is_reduced_to_safe_basename(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            source_pdf = root / "safe.pdf"
+            write_minimal_pdf(source_pdf, title="Säker", text="Text")
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, _ = _post_multipart_pdf(
+                    server, "/upload", "../2025 Säker.pdf", source_pdf.read_bytes()
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            documents = Archive(config.archive_root).list_documents()
+            self.assertEqual(status, 200)
+            self.assertEqual(documents[0].original_filename, "2025 Säker.pdf")
+            self.assertFalse((root / "2025 Säker.pdf").exists())
+
+    def test_upload_rejects_absolute_and_windows_drive_filenames(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            source_pdf = root / "safe.pdf"
+            write_minimal_pdf(source_pdf, title="Säker", text="Text")
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                unix_status, unix_body = _post_multipart_pdf(
+                    server, "/upload", "/tmp/rapport.pdf", source_pdf.read_bytes()
+                )
+                windows_status, windows_body = _post_multipart_pdf(
+                    server, "/upload", "C:\\tmp\\rapport.pdf", source_pdf.read_bytes()
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(unix_status, 200)
+            self.assertEqual(windows_status, 200)
+            self.assertIn("Filnamnet är inte säkert att använda.", unix_body)
+            self.assertIn("Filnamnet är inte säkert att använda.", windows_body)
+            self.assertEqual(Archive(config.archive_root).list_documents(), [])
+
+    def test_upload_rejects_non_pdf_and_oversized_request(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            config = AppConfig(
+                archive_root=config.archive_root,
+                runtime_root=config.runtime_root,
+                ingest_source=config.ingest_source,
+                encrypted_secrets_path=config.encrypted_secrets_path,
+                secrets_path=config.secrets_path,
+                upload_max_bytes=20,
+            )
+            app = CaptureApp(Archive(config.archive_root), config=config)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                too_large_status, _ = _post_multipart_pdf(
+                    server, "/upload", "large.pdf", b"%PDF-" + b"x" * 100
+                )
+                app.upload_max_bytes = 10_000
+                bad_status, bad_body = _post_multipart_pdf(
+                    server, "/upload", "not.pdf", b"not actually a pdf"
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(too_large_status, 413)
+            self.assertEqual(bad_status, 200)
+            self.assertIn("Filen är inte en PDF.", bad_body)
+            self.assertEqual(Archive(config.archive_root).list_documents(), [])
+
     def test_document_context_capture_creates_linked_note_with_source(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -1497,6 +1726,16 @@ def _create_ai_candidate(
         confidence="medel",
         project_ids=project_ids,
         semantic_type=semantic_type,
+    )
+
+
+def _web_config(root: Path) -> AppConfig:
+    return AppConfig(
+        archive_root=root / "archive",
+        runtime_root=root / "runtime",
+        ingest_source=root / "ingest",
+        encrypted_secrets_path=root / "secrets.enc",
+        secrets_path=root / "secrets.toml",
     )
 
 

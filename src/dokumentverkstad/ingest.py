@@ -37,49 +37,14 @@ def process_ingest_source(
     for pdf_path in sorted(source_root.glob("*.pdf"), key=lambda item: item.name.casefold()):
         _log(log, f"Behandlar PDF: {pdf_path}")
         try:
-            _log(log, "  Steg: kopierar till runtime")
-            staged_path = _stage_pdf(pdf_path, staging_root)
-
-            _log(log, "  Steg: beräknar checksumma")
-            checksum = calculate_checksum(staged_path)
-            existing = archive.find_document_by_checksum(checksum)
-            if existing:
-                processed_path = _move_processed_pdf(
-                    pdf_path, runtime_root / "ingest" / "processed"
-                )
-                _log(log, f"  Klar: dubblett, använder befintligt Document {existing.id}")
-                results.append(
-                    IngestResult(
-                        existing,
-                        created=False,
-                        source_path=pdf_path,
-                        processed_path=processed_path,
-                    )
-                )
-                continue
-
-            _log(log, "  Steg: extraherar PDF-text")
-            extracted = extract_pdf(staged_path)
-
-            _log(log, "  Steg: arkiverar Document")
-            document = archive.register_document_with_original_pdf(
-                original_path=staged_path,
-                title=extracted.title,
-                author=extracted.author,
-                year=extracted.year,
-                text=extracted.text,
-                checksum_sha256=checksum,
+            result = process_pdf_file(
+                archive=archive,
+                pdf_path=pdf_path,
+                runtime_root=runtime_root,
+                log=log,
+                move_to_processed=True,
             )
-            processed_path = _move_processed_pdf(pdf_path, runtime_root / "ingest" / "processed")
-            _log(log, f"  Klar: skapade Document {document.id}")
-            results.append(
-                IngestResult(
-                    document,
-                    created=True,
-                    source_path=pdf_path,
-                    processed_path=processed_path,
-                )
-            )
+            results.append(result)
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             _log(log, f"  Misslyckades: {message}")
@@ -87,6 +52,65 @@ def process_ingest_source(
                 IngestResult(None, created=False, source_path=pdf_path, error=message)
             )
     return results
+
+
+def process_pdf_file(
+    archive: Archive,
+    pdf_path: str | Path,
+    runtime_root: str | Path,
+    log: Callable[[str], None] | None = None,
+    move_to_processed: bool = False,
+) -> IngestResult:
+    source_path = Path(pdf_path)
+    runtime_root = ensure_directory(runtime_root, "runtime_root")
+    staging_root = runtime_root / "ingest"
+    staging_root.mkdir(parents=True, exist_ok=True)
+
+    _log(log, "  Steg: kopierar till runtime")
+    staged_path = _stage_pdf(source_path, staging_root)
+    _ensure_pdf_file(staged_path)
+
+    _log(log, "  Steg: beräknar checksumma")
+    checksum = calculate_checksum(staged_path)
+    existing = archive.find_document_by_checksum(checksum)
+    if existing:
+        processed_path = (
+            _move_processed_pdf(source_path, runtime_root / "ingest" / "processed")
+            if move_to_processed
+            else None
+        )
+        _log(log, f"  Klar: dubblett, använder befintligt Document {existing.id}")
+        return IngestResult(
+            existing,
+            created=False,
+            source_path=source_path,
+            processed_path=processed_path,
+        )
+
+    _log(log, "  Steg: extraherar PDF-text")
+    extracted = extract_pdf(staged_path)
+
+    _log(log, "  Steg: arkiverar Document")
+    document = archive.register_document_with_original_pdf(
+        original_path=staged_path,
+        title=extracted.title,
+        author=extracted.author,
+        year=extracted.year,
+        text=extracted.text,
+        checksum_sha256=checksum,
+    )
+    processed_path = (
+        _move_processed_pdf(source_path, runtime_root / "ingest" / "processed")
+        if move_to_processed
+        else None
+    )
+    _log(log, f"  Klar: skapade Document {document.id}")
+    return IngestResult(
+        document,
+        created=True,
+        source_path=source_path,
+        processed_path=processed_path,
+    )
 
 
 def calculate_checksum(path: str | Path) -> str:
@@ -101,6 +125,13 @@ def _stage_pdf(pdf_path: Path, staging_root: Path) -> Path:
     staged_path = staging_root / pdf_path.name
     shutil.copy2(pdf_path, staged_path)
     return staged_path
+
+
+def _ensure_pdf_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        header = handle.read(8)
+    if not header.startswith(b"%PDF-"):
+        raise ValueError("Filen är inte en PDF.")
 
 
 def _move_processed_pdf(pdf_path: Path, processed_root: Path) -> Path:

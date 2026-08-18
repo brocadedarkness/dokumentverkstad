@@ -6,9 +6,11 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from shutil import rmtree
 from time import perf_counter
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
+from uuid import uuid4
 
 from .ai import (
     AI_CAPABILITIES,
@@ -32,6 +34,8 @@ from .config import AppConfig, ensure_app_directories, load_config
 from .diagnostics import runtime_log_sink
 from .document import Document
 from .health import check_health
+from .index import rebuild_document_index
+from .ingest import IngestResult, process_pdf_file
 from .knowledge import KnowledgeObject
 from .project import Project
 from .secrets import (
@@ -74,6 +78,7 @@ class CaptureApp:
         self.ai_max_output_tokens = (
             config.ai_max_output_tokens if config else DEFAULT_MAX_OUTPUT_TOKENS
         )
+        self.upload_max_bytes = config.upload_max_bytes if config else 250 * 1024 * 1024
         self.secrets_path = (
             config.secrets_path if config else archive.root.parent / "secrets.toml"
         )
@@ -137,7 +142,28 @@ class CaptureApp:
       {rendered_candidates}
     </section>
     <p><a href="/trash">Trash</a></p>
+    <p><a href="/upload">Lägg till PDF</a></p>
     <p><a href="/admin">Administration</a></p>
+""",
+        )
+
+    def render_upload(self, message: str = "", error: str = "") -> str:
+        feedback = ""
+        if message:
+            feedback = f"<p>{escape(message)}</p>"
+        if error:
+            feedback = f"<p>{escape(error)}</p>"
+        return self._page(
+            title="Lägg till PDF",
+            body=f"""
+    <p><a href="/inbox">Inbox</a></p>
+    <h1>Lägg till PDF</h1>
+    {feedback}
+    <form method="post" action="/upload" enctype="multipart/form-data">
+      <label for="pdf">PDF-fil</label>
+      <input id="pdf" name="pdf" type="file" accept="application/pdf,.pdf" required>
+      <button type="submit">Ladda upp</button>
+    </form>
 """,
         )
 
@@ -852,6 +878,48 @@ class CaptureApp:
             raise ValueError("Permanent radering kräver uttrycklig bekräftelse.")
         self.archive.delete_trashed_document_permanently(document_id)
         self._log(f"trash document permanently deleted document_id={document_id}")
+
+    def ingest_uploaded_pdf(self, body: bytes, content_type: str) -> IngestResult:
+        if not self.config:
+            raise ValueError("Webb-upload kräver konfigurerad runtime.")
+        started = perf_counter()
+        filename, content = _multipart_pdf_upload(body, content_type)
+        safe_filename = _safe_upload_filename(filename)
+        self._log(
+            "upload started "
+            f"filename={safe_filename} "
+            f"size_bytes={len(content)}"
+        )
+        upload_root = self.config.runtime_root / "uploads" / uuid4().hex
+        upload_root.mkdir(parents=True, exist_ok=False)
+        upload_path = upload_root / safe_filename
+        try:
+            upload_path.write_bytes(content)
+            result = process_pdf_file(
+                archive=self.archive,
+                pdf_path=upload_path,
+                runtime_root=self.config.runtime_root,
+                log=self._log,
+                move_to_processed=False,
+            )
+            rebuild_document_index(self.archive, self.config.runtime_root)
+            self._log(
+                "upload ingest completed "
+                f"document_id={result.document.id if result.document else ''} "
+                f"created={result.created} "
+                f"duration_ms={(perf_counter() - started) * 1000:.1f}"
+            )
+            return result
+        except Exception as error:
+            self._log(
+                "upload ingest failed "
+                f"filename={safe_filename} "
+                f"error={error.__class__.__name__} "
+                f"duration_ms={(perf_counter() - started) * 1000:.1f}"
+            )
+            raise
+        finally:
+            rmtree(upload_root, ignore_errors=True)
 
     def create_note_from_form(self, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -1922,6 +1990,9 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             if parsed.path == "/projects":
                 self._send_html(app.render_projects())
                 return
+            if parsed.path == "/upload":
+                self._send_html(app.render_upload())
+                return
             if parsed.path == "/trash":
                 self._send_html(app.render_trash())
                 return
@@ -1958,7 +2029,39 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
         def _handle_POST(self) -> None:
             parsed = urlparse(self.path)
             length = int(self.headers.get("Content-Length", "0"))
+            if parsed.path == "/upload" and length > app.upload_max_bytes:
+                self.send_error(
+                    HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
+                    "Den uppladdade filen är för stor.",
+                )
+                return
             body = self.rfile.read(length)
+
+            if parsed.path == "/upload":
+                try:
+                    result = app.ingest_uploaded_pdf(
+                        body,
+                        self.headers.get("Content-Type", ""),
+                    )
+                except ValueError as error:
+                    self._send_html(app.render_upload(error=str(error)))
+                    return
+                except Exception:
+                    self._send_html(
+                        app.render_upload(
+                            error="PDF-filen kunde inte importeras. Kontrollera att filen är en läsbar PDF."
+                        )
+                    )
+                    return
+                document = result.document
+                if document and result.created:
+                    message = "Dokumentet har lagts till i Inbox."
+                elif document:
+                    message = "PDF-filen finns redan i Archive."
+                else:
+                    message = "PDF-filen kunde inte importeras."
+                self._send_html(app.render_upload(message=message))
+                return
 
             if parsed.path == "/documents":
                 document = app.create_document_from_form(body)
@@ -2174,6 +2277,71 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             self.wfile.write(content)
 
     return Handler
+
+
+def _multipart_pdf_upload(body: bytes, content_type: str) -> tuple[str, bytes]:
+    boundary = _multipart_boundary(content_type)
+    if not boundary:
+        raise ValueError("Upload-formuläret saknar multipart-boundary.")
+    marker = b"--" + boundary
+    for raw_part in body.split(marker):
+        part = raw_part.lstrip(b"\r\n")
+        if not part or part.startswith(b"--"):
+            continue
+        headers, separator, content = part.partition(b"\r\n\r\n")
+        if not separator:
+            continue
+        header_text = _decode_header_bytes(headers)
+        if 'name="pdf"' not in header_text:
+            continue
+        filename = _content_disposition_filename(header_text)
+        if not filename:
+            raise ValueError("Ingen PDF-fil valdes.")
+        if content.endswith(b"\r\n"):
+            content = content[:-2]
+        if not content:
+            raise ValueError("Den uppladdade filen är tom.")
+        return filename, content
+    raise ValueError("Upload-formuläret saknade en PDF-fil.")
+
+
+def _multipart_boundary(content_type: str) -> bytes:
+    for part in content_type.split(";"):
+        clean = part.strip()
+        if clean.startswith("boundary="):
+            boundary = clean.removeprefix("boundary=").strip('"')
+            return boundary.encode("ascii", errors="ignore")
+    return b""
+
+
+def _content_disposition_filename(headers: str) -> str:
+    for line in headers.splitlines():
+        if not line.lower().startswith("content-disposition:"):
+            continue
+        for part in line.split(";"):
+            clean = part.strip()
+            if clean.startswith("filename="):
+                return clean.removeprefix("filename=").strip('"')
+    return ""
+
+
+def _decode_header_bytes(headers: bytes) -> str:
+    try:
+        return headers.decode("utf-8")
+    except UnicodeDecodeError:
+        return headers.decode("latin-1", errors="replace")
+
+
+def _safe_upload_filename(filename: str) -> str:
+    normalized = filename.replace("\\", "/").strip()
+    if normalized.startswith("/") or ":" in normalized:
+        raise ValueError("Filnamnet är inte säkert att använda.")
+    name = Path(normalized).name
+    if not name or name in {".", ".."}:
+        raise ValueError("Filnamnet är inte säkert att använda.")
+    if Path(name).suffix.casefold() != ".pdf":
+        raise ValueError("Endast PDF-filer kan laddas upp.")
+    return name
 
 
 def unlock_configured_secrets(config: AppConfig, password: str | None = None) -> None:

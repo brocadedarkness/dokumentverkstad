@@ -19,6 +19,7 @@ class AppConfig:
     ai_output_language: str = "sv"
     ai_currency: str = "USD"
     ai_cost_limit: float = 0.0
+    upload_max_bytes: int = 250 * 1024 * 1024
     secrets_path: Path = Path(".dokumentverkstad/secrets.toml")
     encrypted_secrets_path: Path = Path(".dokumentverkstad/secrets.enc")
 
@@ -42,6 +43,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     ai_output_language = str(data.get("ai_output_language", "sv"))
     ai_currency = str(data.get("ai_currency", "USD"))
     ai_cost_limit = float(data.get("ai_cost_limit", 0.0))
+    upload_max_bytes = int(data.get("upload_max_bytes", 250 * 1024 * 1024))
     secrets_path = Path(data.get("secrets_path", ".dokumentverkstad/secrets.toml"))
     encrypted_secrets_path = Path(
         data.get("encrypted_secrets_path", ".dokumentverkstad/secrets.enc")
@@ -60,6 +62,7 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         ai_output_language=ai_output_language,
         ai_currency=ai_currency,
         ai_cost_limit=ai_cost_limit,
+        upload_max_bytes=upload_max_bytes,
         secrets_path=_resolve_path(base, secrets_path),
         encrypted_secrets_path=_resolve_path(base, encrypted_secrets_path),
     )
@@ -98,6 +101,7 @@ def default_config_text() -> str:
             'ai_output_language = "sv"',
             'ai_currency = "USD"',
             "ai_cost_limit = 0.0",
+            "upload_max_bytes = 262144000",
             'encrypted_secrets_path = ".dokumentverkstad/secrets.enc"',
             'secrets_path = ".dokumentverkstad/secrets.toml"',
             "",
