@@ -108,6 +108,8 @@ Den omfattar bland annat:
 
 Runtime betraktas som återuppbyggbar.
 
+Aktuell implementation skriver lokal diagnostik till `runtime_root/logs/dokumentverkstad.log` med enkel rotation. Loggen används för warnings, errors, långsamma requests och driftåtgärder som ingest, backup, restore och index rebuild. Den ska inte innehålla API-nycklar, adminlösenord, POST-body, Capture-innehåll eller dokumenttext.
+
 ---
 
 # Ingest

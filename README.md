@@ -27,6 +27,15 @@ python -m dokumentverkstad restore dokumentverkstad-backup-2026-08-18T103000Z.zi
 python -m dokumentverkstad rebuild-index
 ```
 
+Driftstatus och lokal diagnostik:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad status
+```
+
+Webbservern och CLI skriver diagnostik till `runtime_root/logs/dokumentverkstad.log`. Loggen ligger i Runtime och kan raderas utan dataförlust.
+
 För krypterad lokal lagring av OpenAI API key:
 
 ```powershell

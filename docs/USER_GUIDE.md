@@ -1,6 +1,6 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.2.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.3.
 
 Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
 
@@ -54,7 +54,13 @@ $env:PYTHONPATH = "src"
 python -m dokumentverkstad status
 ```
 
-Status visar config-, Archive- och Runtime-sökvägar, om katalogerna är tillgängliga, om krypterade secrets finns och om OpenAI credential är konfigurerad. Själva API-nyckeln visas aldrig.
+Status visar config-, Archive- och Runtime-sökvägar, om Archive är läsbart, om Runtime och SQLite-index finns, antal Documents, Knowledge Objects, Projects, AI-runs och Trash-objekt, samt credential-status utan att visa credential. Saknad OpenAI-nyckel är inte ett driftfel eftersom AI är valfritt.
+
+Health kan vara:
+
+* `ok`: inga kända driftproblem,
+* `warning`: systemet kan användas men något bör åtgärdas, exempelvis saknad Runtime eller saknat index,
+* `error`: ett grundläggande problem finns, exempelvis att Archive saknas eller inte kan läsas.
 
 ## Konfiguration
 
@@ -120,7 +126,8 @@ Efter Iteration 8.2 används runtime för:
 
 * staging-kopia vid PDF-ingest,
 * färdigbehandlade ingest-filer i `runtime_root/ingest/processed`,
-* SQLite-index över Documents.
+* SQLite-index över Documents,
+* lokal diagnostiklogg i `runtime_root/logs/dokumentverkstad.log`.
 
 Runtime ska inte betraktas som beständig användardata. Hela `runtime_root` kan tas bort och återskapas från Archive genom `rebuild-index`; pågående eller obehandlade filer ska ligga i Ingest Source eller Archive, inte i Runtime.
 
@@ -246,11 +253,17 @@ Om Inbox saknar objekt visas ett tomt tillstånd.
 /trash
 ```
 
-Documents som kastas från Inbox får status `trashed` och visas i Trash.
+Documents som kastas från Inbox får status `trashed` och visas i Trash. Trash-status lagras i Documentets `metadata.json` i Archive.
 
 Från Trash kan ett Document återställas. Ett återställt Document får status `new` och visas i Inbox igen.
 
-Trash är minimal i denna iteration. Inga permanenta raderingar görs automatiskt.
+Restore skapar inte en ny kopia av dokumentet och påverkar inte Knowledge Object-historik eller befintliga relationer.
+
+Permanent radering finns som ett uttryckligt val i Trash-vyn. Den kräver bekräftelse och är bara möjlig för Documents som redan ligger i Trash.
+
+Permanent radering blockeras om Dokumentverkstad hittar kända Archive-referenser till dokumentet, exempelvis Knowledge Objects eller AI-runs. I så fall ligger dokumentet kvar i Trash tills referenserna kan hanteras säkert.
+
+Ingen automatisk permanent radering görs.
 
 ## Document-vy
 
