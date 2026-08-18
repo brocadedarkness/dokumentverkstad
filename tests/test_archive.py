@@ -313,6 +313,33 @@ class ArchiveTests(unittest.TestCase):
                 [document.id],
             )
 
+    def test_permanent_document_delete_requires_trash_and_known_clean_references(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Raderas inte direkt")
+
+            with self.assertRaises(ValueError):
+                archive.delete_trashed_document_permanently(document.id)
+
+            archive.set_document_inbox_status(document.id, "trashed")
+            archive.create_knowledge_object("Referens", document_id=document.id)
+
+            with self.assertRaises(ValueError):
+                archive.delete_trashed_document_permanently(document.id)
+
+            self.assertEqual(archive.get_document(document.id).title, "Raderas inte direkt")
+
+    def test_permanent_document_delete_removes_unreferenced_trashed_document(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Kan raderas")
+            archive.set_document_inbox_status(document.id, "trashed")
+
+            archive.delete_trashed_document_permanently(document.id)
+
+            self.assertEqual(archive.list_trashed_documents(), [])
+            self.assertFalse((Path(tmp) / "archive" / "documents" / document.id).exists())
+
     def test_manual_metadata_edit_marks_source_and_survives_restart(self) -> None:
         with workspace_tempdir() as tmp:
             archive_root = Path(tmp) / "archive"

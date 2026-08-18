@@ -6,6 +6,8 @@ import unittest
 
 from dokumentverkstad.ai import AiRunRecord
 from dokumentverkstad.archive import Archive
+from dokumentverkstad.config import AppConfig
+from dokumentverkstad.index import rebuild_document_index
 from dokumentverkstad.statistics import build_ai_statistics
 from dokumentverkstad.web import CaptureApp
 from helpers import workspace_tempdir
@@ -138,6 +140,28 @@ class StatisticsTest(unittest.TestCase):
             self.assertIn("Ingen AI-användning ännu.", html)
             self.assertIn("Genomförda AI-körningar", html)
             self.assertIn("0.000000 USD", html)
+
+    def test_admin_view_includes_small_health_section_when_configured(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            archive = Archive(root / "archive")
+            archive.create_document("Drift")
+            config = AppConfig(
+                archive_root=root / "archive",
+                runtime_root=root / "runtime",
+                ingest_source=root / "ingest",
+                encrypted_secrets_path=root / "secrets.enc",
+                secrets_path=root / "secrets.toml",
+            )
+            rebuild_document_index(archive, config.runtime_root)
+            app = CaptureApp(archive, config=config)
+
+            html = app.render_admin()
+
+            self.assertIn("Driftstatus", html)
+            self.assertIn("<dd>ok</dd>", html)
+            self.assertIn("OpenAI credential", html)
+            self.assertIn("saknas (AI är valfritt)", html)
 
     def test_admin_view_renders_multiple_models_and_prompt_versions(self) -> None:
         with workspace_tempdir() as tmp:

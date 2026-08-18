@@ -6,7 +6,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from dokumentverkstad.ai import AiRunRecord
+from dokumentverkstad.ai import AiProvider, AiProviderError, AiRunRecord
 from dokumentverkstad.archive import Archive
 from dokumentverkstad.ingest import calculate_checksum
 from dokumentverkstad.web import CaptureApp, make_handler
@@ -189,6 +189,101 @@ class CaptureAppTests(unittest.TestCase):
                 thread.join()
 
             self.assertEqual(archive.get_document(document.id).inbox_status, "new")
+
+    def test_trash_view_identifies_documents_and_delete_requires_confirmation(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Slängd rapport", author="KB", year="2024")
+            archive.set_document_inbox_status(document.id, "trashed")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                html = _get(server, "/trash")
+                self.assertIn("Document", html)
+                self.assertIn("Slängd rapport", html)
+                self.assertIn("KB | 2024", html)
+                self.assertNotIn(f">{document.id}<", html)
+
+                status, _ = _post(
+                    server,
+                    f"/trash/documents/{document.id}/delete",
+                    "",
+                )
+                self.assertEqual(status, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(archive.get_document(document.id).inbox_status, "trashed")
+
+    def test_restore_from_trash_preserves_history_and_does_not_duplicate(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Historik")
+            note = archive.create_knowledge_object("Gammal", document_id=document.id)
+            archive.update_knowledge_object(note.id, "Ny")
+            archive.set_document_inbox_status(document.id, "trashed")
+            app = CaptureApp(archive)
+
+            app.archive.restore_document(document.id)
+
+            self.assertEqual(len(archive.list_documents()), 1)
+            restored_note = archive.get_knowledge_object(note.id)
+            self.assertEqual(restored_note.content, "Ny")
+            self.assertEqual(restored_note.history[0].content, "Gammal")
+
+    def test_permanent_delete_over_http_blocks_referenced_documents(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Refererat")
+            archive.create_knowledge_object("Notering", document_id=document.id)
+            archive.set_document_inbox_status(document.id, "trashed")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                html = _get(server, "/trash")
+                self.assertIn("Permanent radering spärrad", html)
+                status, _ = _post(
+                    server,
+                    f"/trash/documents/{document.id}/delete",
+                    "confirm_delete=yes",
+                )
+                self.assertEqual(status, 400)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(archive.get_document(document.id).inbox_status, "trashed")
+
+    def test_permanent_delete_over_http_removes_unreferenced_trashed_document(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            document = archive.create_document("Orefererat")
+            archive.set_document_inbox_status(document.id, "trashed")
+            app = CaptureApp(archive)
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, location = _post(
+                    server,
+                    f"/trash/documents/{document.id}/delete",
+                    "confirm_delete=yes",
+                )
+                self.assertEqual(status, 303)
+                self.assertEqual(location, "/trash")
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(archive.list_documents(include_trashed=True), [])
 
     def test_ai_candidate_review_actions_return_http_response_and_persist(self) -> None:
         with workspace_tempdir() as tmp:
@@ -785,6 +880,38 @@ class CaptureAppTests(unittest.TestCase):
             joined = "\n".join(messages)
             self.assertIn("path=/capture", joined)
             self.assertNotIn("secret-body-value", joined)
+
+    def test_ai_failure_is_logged_without_secret_or_document_text(self) -> None:
+        class FailingProvider(AiProvider):
+            name = "mock"
+
+            def analyze_document(self, **kwargs):  # type: ignore[no-untyped-def]
+                raise AiProviderError("simulerat fel med provider")
+
+        with workspace_tempdir() as tmp:
+            messages: list[str] = []
+            root = Path(tmp)
+            archive = Archive(root / "archive")
+            pdf_path = root / "rapport.pdf"
+            write_minimal_pdf(pdf_path, text="VERY SECRET DOCUMENT TEXT")
+            document = archive.register_document_with_original_pdf(
+                pdf_path,
+                title="AI rapport",
+                text="VERY SECRET DOCUMENT TEXT",
+                checksum_sha256=calculate_checksum(pdf_path),
+            )
+            app = CaptureApp(archive, ai_provider=FailingProvider(), log=messages.append)
+
+            with self.assertRaises(AiProviderError):
+                app.run_document_ai_analysis_from_form(
+                    document.id, b"confirm_ai=yes&api_key=sk-should-not-log"
+                )
+
+            joined = "\n".join(messages)
+            self.assertIn("ai analysis failed", joined)
+            self.assertIn(f"document_id={document.id}", joined)
+            self.assertNotIn("sk-should-not-log", joined)
+            self.assertNotIn("VERY SECRET DOCUMENT TEXT", joined)
 
     def test_existing_project_link_hides_project_suggestion_and_not_duplicate_link(self) -> None:
         with workspace_tempdir() as tmp:

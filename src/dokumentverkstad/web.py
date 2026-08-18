@@ -29,7 +29,9 @@ from .ai import (
 )
 from .archive import Archive
 from .config import AppConfig, ensure_app_directories, load_config
+from .diagnostics import runtime_log_sink
 from .document import Document
+from .health import check_health
 from .knowledge import KnowledgeObject
 from .project import Project
 from .secrets import (
@@ -142,14 +144,7 @@ class CaptureApp:
     def render_trash(self) -> str:
         documents = self.archive.list_trashed_documents()
         rendered_documents = "\n".join(
-            f"""
-      <li>
-        <a href="/documents/{escape(document.id)}">{escape(document.title)}</a>
-        <form method="post" action="/trash/documents/{escape(document.id)}/restore">
-          <button type="submit">Återställ</button>
-        </form>
-      </li>
-"""
+            self._render_trashed_document(document)
             for document in documents
         )
         if not rendered_documents:
@@ -166,8 +161,45 @@ class CaptureApp:
 """,
         )
 
+    def _render_trashed_document(self, document: Document) -> str:
+        references = self.archive.document_reference_summary(document.id)
+        reference_note = (
+            f"<p>Permanent radering spärrad: {escape(', '.join(references))} refererar till dokumentet.</p>"
+            if references
+            else "<p>Permanent radering kan inte ångras genom vanlig Restore.</p>"
+        )
+        delete_form = (
+            ""
+            if references
+            else f"""
+        <form method="post" action="/trash/documents/{escape(document.id)}/delete">
+          <label>
+            <input type="checkbox" name="confirm_delete" value="yes" required>
+            Radera permanent
+          </label>
+          <button type="submit">Radera permanent</button>
+        </form>
+"""
+        )
+        metadata = document.author or "Okänt upphov"
+        if document.year:
+            metadata = f"{metadata} | {document.year}"
+        return f"""
+      <li>
+        <p>Document</p>
+        <a href="/documents/{escape(document.id)}">{escape(document.title)}</a>
+        <p>{escape(metadata)}</p>
+        <form method="post" action="/trash/documents/{escape(document.id)}/restore">
+          <button type="submit">Återställ</button>
+        </form>
+        {reference_note}
+        {delete_form}
+      </li>
+"""
+
     def render_admin(self) -> str:
         statistics = build_ai_statistics(self.archive)
+        health_section = self._render_health_section()
         empty_notice = (
             "<p>Ingen AI-användning ännu.</p>"
             if statistics.completed_runs == 0 and statistics.candidate_reviews.total == 0
@@ -178,6 +210,7 @@ class CaptureApp:
             body=f"""
     <h1>Administration</h1>
     {empty_notice}
+    {health_section}
     <section aria-labelledby="ai-totals">
       <h2 id="ai-totals">AI-statistik</h2>
       {self._render_ai_statistics_totals(statistics)}
@@ -204,6 +237,34 @@ class CaptureApp:
     </section>
 """,
         )
+
+    def _render_health_section(self) -> str:
+        if not self.config:
+            return ""
+        health = check_health(self.config)
+        messages = "\n".join(
+            f"<li>{escape(message)}</li>" for message in health.messages
+        )
+        if not messages:
+            messages = "<li>Inga kända driftproblem.</li>"
+        return f"""
+    <section aria-labelledby="health">
+      <h2 id="health">Driftstatus</h2>
+      <dl>
+        <dt>Health</dt>
+        <dd>{escape(health.status)}</dd>
+        <dt>Archive</dt>
+        <dd>{'OK' if health.archive_readable else 'problem'}</dd>
+        <dt>Index</dt>
+        <dd>{'OK' if health.index_exists else 'saknas'}</dd>
+        <dt>OpenAI credential</dt>
+        <dd>{escape(health.credential_status)}</dd>
+        <dt>Trash</dt>
+        <dd>{health.counts.trash_objects}</dd>
+      </dl>
+      <ul>{messages}</ul>
+    </section>
+"""
 
     def render_documents(
         self,
@@ -784,6 +845,13 @@ class CaptureApp:
         self.archive.set_document_projects(document_id, project_ids)
         if decision:
             self.archive.set_document_inbox_status(document_id, decision)
+
+    def delete_trashed_document_from_form(self, document_id: str, body: bytes) -> None:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        if form.get("confirm_delete", [""])[0] != "yes":
+            raise ValueError("Permanent radering kräver uttrycklig bekräftelse.")
+        self.archive.delete_trashed_document_permanently(document_id)
+        self._log(f"trash document permanently deleted document_id={document_id}")
 
     def create_note_from_form(self, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -2012,6 +2080,19 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 self.end_headers()
                 return
 
+            if parsed.path.startswith("/trash/documents/") and parsed.path.endswith("/delete"):
+                document_path = unquote(parsed.path.removeprefix("/trash/documents/"))
+                document_id = document_path.removesuffix("/delete")
+                try:
+                    app.delete_trashed_document_from_form(document_id, body)
+                except ValueError as error:
+                    self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+                    return
+                self.send_response(HTTPStatus.SEE_OTHER)
+                self.send_header("Location", "/trash")
+                self.end_headers()
+                return
+
             if parsed.path.startswith("/projects/"):
                 project_path = unquote(parsed.path.removeprefix("/projects/"))
                 if project_path.endswith("/links"):
@@ -2113,7 +2194,11 @@ def main(config_path: str | None = None, password: str | None = None) -> None:
         unlock_configured_secrets(config, password=password)
     except SecretsError as error:
         raise SystemExit(str(error)) from error
-    app = CaptureApp(Archive(config.archive_root), config=config, log=print)
+    app = CaptureApp(
+        Archive(config.archive_root),
+        config=config,
+        log=runtime_log_sink(config.runtime_root),
+    )
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
     print(f"Dokumentverkstad Capture körs på http://{config.host}:{config.port}/")
     server.serve_forever()

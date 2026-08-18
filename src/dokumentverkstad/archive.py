@@ -186,6 +186,34 @@ class Archive:
     def restore_document(self, document_id: str) -> Document:
         return self.set_document_inbox_status(document_id, "new")
 
+    def delete_trashed_document_permanently(self, document_id: str) -> None:
+        document = self.get_document(document_id)
+        if document.inbox_status != "trashed":
+            raise ValueError("Document must be in Trash before permanent deletion.")
+        references = self.document_reference_summary(document_id)
+        if references:
+            raise ValueError(
+                "Document has Archive references and cannot be safely deleted: "
+                + ", ".join(references)
+            )
+        shutil.rmtree(self._document_path(document_id).parent)
+
+    def document_reference_summary(self, document_id: str) -> tuple[str, ...]:
+        references: list[str] = []
+        knowledge_count = sum(
+            1
+            for item in self.list_knowledge_objects()
+            if item.document_id == document_id
+        )
+        if knowledge_count:
+            references.append(f"{knowledge_count} Knowledge Objects")
+        ai_run_count = sum(
+            1 for run in self.list_ai_runs() if run.document_id == document_id
+        )
+        if ai_run_count:
+            references.append(f"{ai_run_count} AI runs")
+        return tuple(references)
+
     def set_document_projects(
         self, document_id: str, project_ids: tuple[str, ...]
     ) -> Document:

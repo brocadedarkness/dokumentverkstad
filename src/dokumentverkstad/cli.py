@@ -16,6 +16,8 @@ from .config import (
     load_config,
     write_default_config,
 )
+from .diagnostics import runtime_log_sink
+from .health import check_health
 from .index import rebuild_document_index
 from .ingest import process_ingest_source
 from .secrets import (
@@ -72,25 +74,27 @@ def main(argv: list[str] | None = None) -> None:
             _initialize_installation(args)
             return
 
+        if command == "status":
+            config = load_config(args.config)
+            _print_status(config, args.config)
+            return
+
         config = load_config(args.config)
         ensure_app_directories(config)
         archive = Archive(config.archive_root)
         archive.initialize()
-
-        if command == "status":
-            _print_status(config, args.config)
-            return
 
         if command == "secrets":
             _handle_secrets_command(args.secrets_command, config)
             return
 
         if command == "process-ingest":
+            log = runtime_log_sink(config.runtime_root)
             results = process_ingest_source(
                 archive=archive,
                 ingest_source=config.ingest_source,
                 runtime_root=config.runtime_root,
-                log=print,
+                log=log,
             )
             rebuild_document_index(archive, config.runtime_root)
             created = sum(1 for result in results if result.created)
@@ -103,7 +107,13 @@ def main(argv: list[str] | None = None) -> None:
             return
 
         if command == "backup":
-            result = create_backup(config, output_dir=args.output_dir)
+            log = runtime_log_sink(config.runtime_root)
+            try:
+                result = create_backup(config, output_dir=args.output_dir)
+                log(f"backup completed path={result.path} size_bytes={result.size_bytes}")
+            except BackupError as error:
+                log(f"backup failed error={error.__class__.__name__}")
+                raise
             print("Backup skapad:")
             print(result.path)
             _print_counts(result.counts)
@@ -111,7 +121,13 @@ def main(argv: list[str] | None = None) -> None:
             return
 
         if command == "restore":
-            result = restore_backup(args.backup_file, config, force=args.force)
+            log = runtime_log_sink(config.runtime_root)
+            try:
+                result = restore_backup(args.backup_file, config, force=args.force)
+                log(f"restore completed archive={result.archive_root}")
+            except BackupError as error:
+                log(f"restore failed error={error.__class__.__name__}")
+                raise
             print("Backup återställd:")
             print(f"Archive: {result.archive_root}")
             print(f"Index återskapat: {result.index_path}")
@@ -120,7 +136,13 @@ def main(argv: list[str] | None = None) -> None:
             return
 
         if command == "rebuild-index":
-            database_path = rebuild_document_index(archive, config.runtime_root)
+            log = runtime_log_sink(config.runtime_root)
+            try:
+                database_path = rebuild_document_index(archive, config.runtime_root)
+                log(f"index rebuilt path={database_path}")
+            except Exception as error:
+                log(f"index rebuild failed error={error.__class__.__name__}")
+                raise
             print(f"Index återskapat: {database_path}")
             return
     except (ConfigurationError, SecretsError, BackupError) as error:
@@ -186,19 +208,32 @@ def _initialize_encrypted_secrets(path: Path, with_openai: bool) -> None:
 
 
 def _print_status(config: AppConfig, config_path: str | None) -> None:
+    health = check_health(config)
     print(f"Config: {_configured_or_default_config_path(config_path)}")
     print(f"Archive: {config.archive_root}")
-    print(f"Archive tillgängligt: {'ja' if config.archive_root.is_dir() else 'nej'}")
+    print(f"Archive läsbart: {'ja' if health.archive_readable else 'nej'}")
     print(f"Runtime: {config.runtime_root}")
-    print(f"Runtime tillgängligt: {'ja' if config.runtime_root.is_dir() else 'nej'}")
+    print(f"Runtime finns: {'ja' if health.runtime_exists else 'nej'}")
+    print(f"Index: {'finns' if health.index_exists else 'saknas'}")
     print(f"Ingest: {config.ingest_source}")
+    print(f"Health: {health.status}")
+    print(f"Documents: {health.counts.documents}")
+    print(f"Knowledge Objects: {health.counts.knowledge_objects}")
+    print(f"Projects: {health.counts.projects}")
+    print(f"AI runs: {health.counts.ai_runs}")
+    print(f"Trash-objekt: {health.counts.trash_objects}")
     print(
         "Krypterade secrets: "
-        f"{'konfigurerade' if config.encrypted_secrets_path.exists() else 'saknas'}"
+        f"{'konfigurerade' if health.encrypted_secrets else 'saknas'}"
     )
     if config.secrets_path.exists():
         print("Legacy secrets.toml: finns (lämnas oförändrad)")
-    print(f"OpenAI credential: {_credential_status(config)}")
+    print(f"OpenAI credential: {health.credential_status}")
+    print("Pågående operation: ingen känd")
+    print(f"Loggfil: {health.log_path}")
+    for message in health.messages:
+        print(message)
+
 
 def _print_counts(counts: object) -> None:
     print(f"Documents: {counts.documents}")

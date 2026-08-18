@@ -9,7 +9,7 @@ from zipfile import ZipFile
 
 from dokumentverkstad.archive import Archive
 from dokumentverkstad.cli import main
-from dokumentverkstad.index import list_indexed_documents
+from dokumentverkstad.index import list_indexed_documents, rebuild_document_index
 from dokumentverkstad.secrets import decrypt_secrets_file, initialize_encrypted_secrets
 from dokumentverkstad.web import main as web_main
 from helpers import workspace_tempdir
@@ -118,7 +118,72 @@ class CliTests(unittest.TestCase):
             self.assertIn("Runtime:", output)
             self.assertIn("Krypterade secrets:", output)
             self.assertIn("OpenAI credential:", output)
+            self.assertIn("Documents: 0", output)
+            self.assertIn("Knowledge Objects: 0", output)
+            self.assertIn("Projects: 0", output)
+            self.assertIn("AI runs: 0", output)
+            self.assertIn("Trash-objekt: 0", output)
             self.assertNotIn("sk-legacy-secret", output)
+
+    def test_status_reports_warning_when_runtime_or_index_is_missing(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config_path = root / "dokumentverkstad.toml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        'archive_root = "archive"',
+                        'runtime_root = "runtime"',
+                        'ingest_source = "ingest"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            Archive(root / "archive").create_document("Status")
+            stdout = io.StringIO()
+
+            with redirect_stdout(stdout):
+                main(["--config", str(config_path), "status"])
+
+            output = stdout.getvalue()
+            self.assertIn("Health: warning", output)
+            self.assertIn("Runtime finns: nej", output)
+            self.assertIn("Documents: 1", output)
+            self.assertIn("OpenAI credential: saknas (AI är valfritt)", output)
+
+            rebuild_document_index(Archive(root / "archive"), root / "runtime")
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                main(["--config", str(config_path), "status"])
+            output = stdout.getvalue()
+            self.assertIn("Health: ok", output)
+            self.assertIn("Index: finns", output)
+
+    def test_process_ingest_writes_runtime_log_without_document_text(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config_path = root / "dokumentverkstad.toml"
+            config_path.write_text(
+                "\n".join(
+                    [
+                        'archive_root = "archive"',
+                        'runtime_root = "runtime"',
+                        'ingest_source = "ingest"',
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            ingest = root / "ingest"
+            ingest.mkdir()
+            (ingest / "bad.pdf").write_text("SECRET DOCUMENT TEXT", encoding="utf-8")
+
+            main(["--config", str(config_path), "process-ingest"])
+
+            log_text = (root / "runtime" / "logs" / "dokumentverkstad.log").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("Misslyckades", log_text)
+            self.assertNotIn("SECRET DOCUMENT TEXT", log_text)
 
     def test_backup_command_creates_zip_and_reports_counts(self) -> None:
         with workspace_tempdir() as tmp:
