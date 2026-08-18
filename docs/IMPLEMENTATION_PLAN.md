@@ -930,167 +930,418 @@ Iteration 7.2 är klar när följande scenario fungerar:
 
 ## Syfte
 
-Den åttonde iterationen gör Dokumentverkstad driftsäker och portabel för långvarig vardagsanvändning.
+Iteration 8 handlar om att göra Dokumentverkstad till ett robust och portabelt vardagsverktyg.
 
-Grundläggande verklig användning har redan etablerats. Fokus flyttas därför från kärnfunktionalitet till installation, drift, backup, återställning, secrets och möjlighet att flytta installationen mellan maskiner.
+Systemets grundläggande arbetsflöden fungerar nu i verklig användning. Documents kan importeras, bearbetas med AI, läsas och kompletteras med egna Captures. Archive innehåller verkligt material och ska betraktas som långlivad användardata.
 
-## Arbetsflöde
+Fokus flyttas därför från ny kärnfunktionalitet till:
 
-Dokumentverkstad startas.
+- säker och enkel drift,
+- säker hantering av secrets,
+- backup och återställning,
+- portabilitet mellan datorer,
+- reproducerbar Runtime,
+- kontrollerad åtkomst från andra egna enheter,
+- enkel installation och första konfiguration.
 
-Innan webbservern blir tillgänglig måste användaren ange ett adminlösenord.
+Efter denna iteration ska användaren inte behöva förstå eller manuellt hantera Dokumentverkstads interna filstruktur för normal drift.
 
-Adminlösenordet används för att låsa upp tjänsten och dekryptera lokalt lagrade secrets, exempelvis API-nycklar.
+---
 
-När tjänsten är upplåst:
+## Grundprincip
 
-* Dokumentverkstad körs kontinuerligt,
-* nya dokument kan tas emot,
-* Inbox fylls,
-* Capture används,
-* Projects utvecklas,
-* AI kan användas när credentials finns tillgängliga.
+Archive är systemets auktoritativa och långlivade datalager.
 
-Systemet blir en naturlig del av användarens arbete.
+Runtime, index och andra härledda data ska kunna raderas och återskapas från Archive.
 
-## Infrastruktur
+Secrets ska hanteras separat från Archive och ska inte ingå i vanliga backups eller exporter.
 
-Denna iteration omfattar:
+Iteration 8 får inte införa nya beroenden mellan Archive och en viss dator, installation eller nätverksmiljö.
 
-* kontinuerlig drift,
-* tjänstestart och avstängning,
-* adminautentisering vid start,
-* krypterad lokal secrets-lagring,
-* bakgrundsbevakning av Ingest Source,
-* backup,
-* återställning,
-* administrativa driftverktyg,
-* övervakning och felsökning.
+---
 
-## Adminlösenord och upplåsning
+## 1. Installation och initiering
 
-Dokumentverkstad ska inte starta sin webbserver förrän ett korrekt adminlösenord har angetts.
+En ny installation ska kunna initieras genom ett tydligt arbetsflöde.
 
-Adminlösenordet ska:
+Det ska inte krävas att användaren manuellt skapar interna kataloger eller redigerar interna konfigurationsfiler för att få en grundinstallation att fungera.
 
-* aldrig lagras i klartext,
-* inte skrivas till logg,
-* inte sparas i Archive,
-* inte versionshanteras.
-
-Lösenordet används för att härleda en krypteringsnyckel som i sin tur används för att dekryptera lokala secrets.
-
-Fel lösenord ska inte starta tjänsten.
-
-Efter lyckad upplåsning hålls nödvändiga secrets endast i minnet under den aktuella körningen.
-
-När processen avslutas ska den dekrypterade informationen inte finnas kvar på disk.
-
-## Krypterad secrets-lagring
-
-API-nycklar och andra hemligheter ska kunna lagras krypterat lokalt.
+Ett CLI-baserat initieringsflöde är tillräckligt.
 
 Exempel:
 
 ```text
-.dokumentverkstad/
-    secrets.enc
+dokumentverkstad init
 ```
 
-Secrets-filen:
+Initieringen ska kunna:
 
-* ligger utanför Archive,
-* versionshanteras aldrig,
-* får säkerhetskopieras endast om backupen hanteras som känslig information,
-* ska kunna ersättas utan att Archive eller övrig användardata påverkas.
+- skapa nödvändig katalogstruktur,
+- skapa eller konfigurera grundläggande icke-hemlig konfiguration,
+- initiera Runtime,
+- initiera secrets-hantering,
+- kontrollera att installationen är användbar.
 
-Använd en etablerad och välgranskad kryptografisk lösning.
+Extern AI och fjärråtkomst ska fortsatt vara valfria funktioner.
 
-Bygg inte egen kryptografi.
+Dokumentverkstad ska kunna användas utan dem.
 
-Lösenordsbaserad key derivation och authenticated encryption ska användas.
+---
 
-## Återställning av credentials
+## 2. Secrets och säker start
 
-Om adminlösenordet glöms bort ska Dokumentverkstads Archive fortfarande vara intakt.
+API-nycklar och andra secrets ska inte behöva lagras i klartext i vanlig konfiguration.
 
-Det ska vara möjligt att:
+Dokumentverkstad ska erbjuda lokal krypterad lagring av secrets.
 
-* kassera den krypterade secrets-filen,
-* återkalla externa API-nycklar,
-* skapa nya credentials,
-* initiera secrets-lagringen på nytt.
+Användaren ska kunna skydda denna lagring med ett separat adminlösenord eller motsvarande lokal autentisering.
 
-Förlust av adminlösenord ska alltså inte innebära förlust av dokument, Knowledge Objects eller Projects.
+Ett normalt startflöde kan exempelvis vara:
 
-## Kontinuerlig drift
+1. användaren startar Dokumentverkstad,
+2. Dokumentverkstad begär lösenord för att låsa upp secrets,
+3. secrets görs tillgängliga för den körande processen,
+4. tjänsten startar.
 
-När Dokumentverkstad är upplåst ska den kunna köras under längre tid utan manuell hantering.
+Lösenordet självt ska inte lagras i klartext.
 
-Iteration 8 ska stödja:
+Secrets ska inte:
 
-* stabil webbserverdrift,
-* automatisk hantering av nödvändiga lokala kataloger,
-* bakgrundsbevakning av Ingest Source,
-* tydlig felrapportering,
-* kontrollerad avstängning.
+- skrivas till loggar,
+- visas i webbgränssnittet,
+- lagras i Archive,
+- inkluderas i vanlig backup/export,
+- committas till Git.
 
-Automatisk tjänstestart efter omboot utan mänsklig upplåsning ingår inte i denna iteration.
+Exakt kryptografisk implementation ska väljas utifrån etablerade bibliotek och vedertagna metoder.
 
-Om detta senare behövs ska OS-baserad secrets-hantering, exempelvis Windows Credential Manager eller macOS Keychain, utvärderas separat.
+Egen kryptografi ska inte implementeras.
 
-## Backup och återställning
+---
 
-Iteration 8 ska etablera fungerande rutiner för backup och återställning.
+## 3. Drift och CLI
 
-Archive är den auktoritativa datakällan.
+Normala driftoperationer ska kunna utföras genom tydliga kommandon.
 
-Det ska vara möjligt att:
+Överväg stöd för exempelvis:
 
-* säkerhetskopiera Archive,
-* återställa Archive till en ny installation,
-* återuppbygga Runtime och index,
-* fortsätta använda systemet efter återställning.
+```text
+dokumentverkstad start
+dokumentverkstad stop
+dokumentverkstad status
+dokumentverkstad backup
+dokumentverkstad restore
+dokumentverkstad rebuild-index
+```
 
-Secrets ska hanteras separat från Archive.
+Den exakta CLI-strukturen får anpassas till befintlig implementation.
 
-## Implementation
+Målet är att användaren inte ska behöva känna till interna Python-moduler eller filoperationer för normal drift.
 
-Iteration 8 implementerar eller härdar:
+Systemet ska ge begripliga felmeddelanden när något saknas eller inte kan startas.
 
-* startkommando för tjänsten,
-* adminlösenord vid start,
-* krypterad secrets-fil,
-* initiering och byte av credentials,
-* bakgrundsbevakning av Ingest Source,
-* administrativa driftkommandon,
-* backup-rutiner,
-* återställning av hela systemet,
-* robust index rebuild,
-* tydlig felsökning och loggning.
+---
 
-Funktioner som redan finns, exempelvis Trash, Restore och index rebuild, ska inte implementeras på nytt utan göras robusta och administrerbara för daglig drift.
+## 4. Backup och portabilitet
+
+Dokumentverkstad ska kunna skapa en reproducerbar backup av användarens långlivade data.
+
+Exempel:
+
+```text
+dokumentverkstad backup
+```
+
+kan skapa något i stil med:
+
+```text
+dokumentverkstad-backup-2026-08-18.zip
+```
+
+Backupen ska minst innehålla:
+
+- Archive,
+- nödvändig icke-hemlig konfiguration,
+- information som krävs för att förstå backupformat och version.
+
+Backupen ska inte behöva innehålla Runtime eller index om dessa kan återskapas.
+
+Secrets ska som standard inte ingå.
+
+Backupformatet ska så långt möjligt bestå av den befintliga öppna filstrukturen snarare än ett nytt proprietärt exportformat.
+
+---
+
+## 5. Restore
+
+En backup ska kunna återställas till en ny eller tom installation.
+
+Exempel:
+
+```text
+dokumentverkstad restore dokumentverkstad-backup-2026-08-18.zip
+```
+
+Efter restore ska Dokumentverkstad kunna:
+
+1. återställa Archive,
+2. återställa relevant icke-hemlig konfiguration,
+3. bygga upp Runtime/index på nytt,
+4. verifiera att arkivet är läsbart.
+
+Secrets ska vid behov konfigureras separat på den nya installationen.
+
+Restore ska inte tyst skriva över ett befintligt Archive utan tydlig kontroll eller uttryckligt användarbeslut.
+
+---
+
+## 6. Reproducerbar Runtime
+
+Det ska vara möjligt att radera hela Runtime och därefter återskapa den från Archive.
+
+Detta gäller bland annat:
+
+- index,
+- härledda räknare,
+- sök- och listdata som redan används av systemet,
+- annan cache eller runtime-state som inte är auktoritativ.
+
+Ett kommando som:
+
+```text
+dokumentverkstad rebuild-index
+```
+
+ska kunna användas för detta.
+
+Ingen användarskapad information får gå förlorad när Runtime raderas.
+
+Detta ska testas mot ett realistiskt Archive med Documents, Knowledge Objects, Projects och AI-runs.
+
+---
+
+## 7. Trash och återställning
+
+Befintliga principer för Trash ska färdigställas för vardagsanvändning.
+
+Användaren ska kunna:
+
+- ta bort objekt utan omedelbar permanent förlust,
+- se vad som finns i Trash,
+- återställa objekt,
+- permanent radera objekt enligt systemets definierade regler.
+
+Historik och referenser ska hanteras på ett förutsägbart sätt.
+
+Normal användning ska inte kräva manuell redigering av Archive-filer.
+
+---
+
+## 8. Fjärråtkomst från egna enheter
+
+Dokumentverkstad ska kunna nås från en annan egen enhet på ett kontrollerat sätt.
+
+Det primära användningsfallet är åtkomst från exempelvis mobiltelefon, iPad eller annan egen dator.
+
+Tailscale är en möjlig och önskvärd driftlösning, men Dokumentverkstad ska inte göras arkitektoniskt beroende av Tailscale.
+
+Systemet ska kunna konfigureras för att lyssna på en adress som gör sådan åtkomst möjlig.
+
+Det ska dokumenteras tydligt:
+
+- vilken nätverksyta tjänsten exponeras på,
+- vilka säkerhetskonsekvenser detta har,
+- hur lokal-only drift skiljer sig från fjärråtkomst.
+
+Dokumentverkstad ska inte exponeras öppet mot internet som en bieffekt av denna iteration.
+
+---
+
+## 9. Mobil ingest
+
+När Dokumentverkstad nås från en mobil enhet ska det finnas ett enkelt sätt att lägga ett dokument i systemets ingest-flöde.
+
+Målet är att användaren exempelvis ska kunna:
+
+1. få eller hitta en PDF på telefonen,
+2. öppna Dokumentverkstad,
+3. välja filen,
+4. lägga den i Inbox/ingest,
+5. låta det befintliga ingest-flödet ta över.
+
+Mobil ingest ska använda samma grundläggande Document- och Archive-semantik som annan ingest.
+
+Skapa inte ett separat mobilt arkiv eller parallellt importflöde.
+
+Den visuella mobilupplevelsen behöver inte slutdesignas i denna iteration.
+
+---
+
+## 10. Responsivitet och långvariga operationer
+
+Iteration 7.1 identifierade att AI-anrop fortfarande körs synkront i HTTP-requesten.
+
+Verkliga AI-anrop kan ta omkring en minut eller mer.
+
+Undersök om långvariga AI-operationer bör flyttas från den synkrona requesten till ett enkelt bakgrundsjobb.
+
+Målet är att:
+
+- webbservern fortsatt ska kunna svara under ett AI-anrop,
+- användaren ska kunna se att analys pågår,
+- resultatet ska sparas enligt befintlig AI-run-semantik,
+- fel och avbrutna körningar ska kunna diagnostiseras.
+
+Inför inte en distribuerad jobbkösarkitektur om en betydligt enklare lokal lösning räcker.
+
+Om befintlig serverarkitektur redan hanterar parallella requests tillräckligt väl ska detta verifieras innan ny infrastruktur införs.
+
+---
+
+## 11. Diagnostik
+
+Den diagnostik som infördes i Iteration 7.1 ska utvecklas till stöd för vardagsdrift.
+
+Det ska vara möjligt att förstå:
+
+- om tjänsten kör,
+- om Archive är tillgängligt,
+- om Runtime/index fungerar,
+- om AI-provider är konfigurerad,
+- om en långvarig operation pågår eller har misslyckats.
+
+Loggar får inte innehålla:
+
+- API-nycklar,
+- lösenord,
+- dokumentinnehåll,
+- andra secrets.
+
+Diagnostik ska i första hand hjälpa till att identifiera fel, inte samla generell användartelemetri.
+
+---
 
 ## Tester
 
-Iterationen är godkänd när:
+Iteration 8 är godkänd när minst följande kan verifieras.
 
-* tjänsten inte startar utan korrekt adminlösenord,
-* fel adminlösenord inte låser upp secrets,
-* secrets aldrig sparas i klartext,
-* secrets inte exponeras i loggar eller UI,
-* tjänsten kan köras utan dataförlust under längre tid,
-* Ingest Source kan bevakas i bakgrunden,
-* Archive kan säkerhetskopieras och återställas,
-* Runtime och index kan återskapas från återställt Archive,
-* förlust av secrets-filen inte påverkar Archive,
-* systemet kan återinitiera credentials utan att användardata förändras.
+### Installation
+
+- en tom installation kan initieras utan manuell redigering av interna filer,
+- nödvändiga kataloger och konfiguration skapas korrekt.
+
+### Secrets
+
+- secrets kan lagras utan klartext i vanlig konfiguration,
+- korrekt lösenord kan låsa upp secrets,
+- felaktigt lösenord ger ett säkert och begripligt fel,
+- secrets förekommer inte i loggar eller vanlig backup.
+
+### Backup och restore
+
+- ett befintligt Archive kan säkerhetskopieras,
+- backupen kan återställas till en tom installation,
+- Documents, Projects, Knowledge Objects och AI-historik bevaras,
+- Runtime/index kan återskapas efter restore,
+- secrets behöver inte följa med backupen.
+
+### Runtime
+
+- Runtime kan raderas fullständigt,
+- Runtime/index kan återskapas från Archive,
+- ingen användardata går förlorad.
+
+### Trash
+
+- borttagna objekt kan återställas enligt definierad Trash-semantik.
+
+### Fjärråtkomst
+
+- tjänsten kan nås från en annan egen enhet när detta uttryckligen konfigurerats,
+- lokal-only drift fungerar fortsatt.
+
+### Mobil ingest
+
+- en PDF som laddas upp via webbgränssnittet går genom det befintliga ingest-flödet och blir ett normalt Document.
+
+### Responsivitet
+
+- långvariga AI-anrop gör inte tjänsten oanvändbar för andra normala operationer,
+- AI-run-status och felhantering bevaras.
+
+Hela den befintliga testsviten ska fortsatt passera.
+
+---
+
+## Avgränsning
+
+Iteration 8 ska inte implementera:
+
+- generell visuell redesign,
+- slutlig mobil design,
+- fulltextsökning,
+- semantisk sökning,
+- embeddings eller RAG,
+- ny ämnes- eller taggmodell,
+- förändrad Project-semantik,
+- nya Document-relationer,
+- MCP-server,
+- extern AI-åtkomst till kunskapsrummet,
+- automatisk AI-optimering.
+
+Dessa frågor hör till senare iterationer.
+
+---
+
+## Implementationsordning
+
+Iteration 8 bör implementeras stegvis snarare än som ett enda stort förändringspaket.
+
+En lämplig ordning är:
+
+### 8.1 – Initiering, CLI och secrets
+
+- initieringsflöde,
+- grundläggande driftkommandon,
+- krypterad secrets-lagring,
+- säker start.
+
+### 8.2 – Backup, restore och reproducerbar Runtime
+
+- backup,
+- restore,
+- portabilitet,
+- rebuild-index,
+- verifiering av Archive som auktoritativ källa.
+
+### 8.3 – Trash, drift och diagnostik
+
+- färdig Trash-hantering,
+- restore från Trash,
+- driftstatus,
+- diagnostik och loggning.
+
+### 8.4 – Fjärråtkomst och vardagsanvändning från andra enheter
+
+- konfigurerbar nätverksåtkomst,
+- dokumenterad Tailscale-användning,
+- mobil ingest,
+- verifiering av användning från mobil eller annan dator,
+- hantering av långvariga AI-operationer.
+
+Dessa delsteg förändrar inte Iteration 8:s övergripande mål. De används för att hålla implementationen granskningsbar och undvika att flera arkitekturbeslut införs samtidigt.
+
+---
 
 ## Klart när
 
 Iteration 8 är klar när följande scenario fungerar:
 
-> Anders startar Dokumentverkstad, anger sitt adminlösenord och tjänsten låses upp. Därefter kan systemet köras under dagen utan att han behöver tänka på drift, index eller secrets. Om datorn går sönder kan Archive återställas på en ny installation, Runtime byggas upp igen och nya credentials konfigureras utan att kunskapsrummet går förlorat.
+> Anders använder Dokumentverkstad som ett långlivat vardagsverktyg med ett verkligt dokumentarkiv. Tjänsten kan startas utan manuell hantering av secrets, nås kontrollerat från hans egna enheter och ta emot nya PDF:er även därifrån. Han kan skapa en backup av hela sitt kunskapsarkiv och återställa den på en ny installation. Runtime kan raderas och återskapas från Archive utan dataförlust. När något går fel finns tillräcklig diagnostik för att förstå problemet utan att känsliga uppgifter exponeras.
+
+Efter Iteration 8 ska Dokumentverkstad inte bara fungera som program.
+
+Den ska gå att förvalta som ett personligt, långlivat kunskapsarkiv.
 
 # Iteration 9 – Konsolidering
 
