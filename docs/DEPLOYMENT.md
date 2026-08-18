@@ -140,6 +140,44 @@ Ingen publik exponering av Dokumentverkstad krävs.
 
 Alla klienter ansluter via Tailscale till den lokala servern.
 
+Aktuell 8.4a-modell är:
+
+```text
+Tailnet client
+    ↓
+Tailscale Serve
+    ↓
+localhost Dokumentverkstad
+```
+
+Dokumentverkstad ska som standard fortsätta lyssna på `127.0.0.1`, normalt `http://127.0.0.1:8000/`. Tailscale Serve är en rekommenderad extern driftlösning som proxyar tailnet-trafik till den lokala porten. Det är inte en del av Dokumentverkstads domänarkitektur och Dokumentverkstad hanterar inte Tailscale-installation, inloggning, API, credentials eller tailnet policies.
+
+Rekommenderad Serve-konfiguration är att först starta Dokumentverkstad lokalt och sedan köra:
+
+```powershell
+tailscale serve 8000
+```
+
+Alternativt, explicit:
+
+```powershell
+tailscale serve localhost:8000
+```
+
+Driftstatus kontrolleras med:
+
+```powershell
+tailscale serve status
+```
+
+Serve-konfigurationen tas bort med:
+
+```powershell
+tailscale serve reset
+```
+
+Tailscale Funnel ska inte användas för Dokumentverkstad i denna deployment-modell. Tjänsten ska vara nåbar via ett kontrollerat tailnet, inte publikt på internet.
+
 ---
 
 # Säkerhet
@@ -148,7 +186,13 @@ API-nycklar lagras lokalt på servern.
 
 De ingår inte i arkivet.
 
-Kommunikation sker över Tailscale eller lokalt nätverk.
+Kommunikation sker över Tailscale eller lokalt via `127.0.0.1`.
+
+I 8.4a finns inget separat webb-login eller sessionsautentisering. Tailnet-åtkomst är åtkomstskyddet för webbgränssnittet. Alla enheter och användare som har nätverksåtkomst till Dokumentverkstad kan använda webbgränssnittet.
+
+Adminlösenordet för krypterade secrets används bara för lokal upplåsning vid processstart och är inte ett webb-login.
+
+Webb-upload av PDF använder säker staging i Runtime, sanerar klientens filnamn, avvisar osäkra sökvägar och kontrollerar PDF-innehåll innan filen registreras i Archive. Standardgränsen för upload är 250 MB (`upload_max_bytes = 262144000`) och kan ändras i config.
 
 ---
 

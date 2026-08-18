@@ -36,6 +36,10 @@ python -m dokumentverkstad status
 
 Webbservern och CLI skriver diagnostik till `runtime_root/logs/dokumentverkstad.log`. Loggen ligger i Runtime och kan raderas utan dataförlust.
 
+Webbgränssnittet startar lokalt på `http://127.0.0.1:8000/`. För privat åtkomst från egna enheter rekommenderas Tailscale Serve mot samma localhost-port, till exempel `tailscale serve 8000`; använd inte offentlig Funnel-exponering.
+
+PDF-filer kan importeras antingen från den konfigurerade Ingest Source eller via webbflödet "Lägg till PDF". Båda vägarna använder samma ingest-semantik med checksumma, dublettkontroll, PDF-text/metadata, Archive-lagring, Inbox-status och indexuppdatering.
+
 För krypterad lokal lagring av OpenAI API key:
 
 ```powershell

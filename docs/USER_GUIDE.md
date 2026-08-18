@@ -1,8 +1,8 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.3.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.4a.
 
-Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
+Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source eller webb-upload, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
 
 ## Första initiering
 
@@ -41,11 +41,70 @@ Som standard körs webbgränssnittet på:
 http://127.0.0.1:8000/
 ```
 
+Standardservern lyssnar bara på `127.0.0.1`. Det är avsiktligt: lokal användning ska vara standard och Dokumentverkstad öppnar inte sig själv mot hela nätverket.
+
 Startsidan är Inbox.
 
 Om `.dokumentverkstad/secrets.enc` finns begär startflödet adminlösenord innan webbservern startar. Vid fel lösenord eller skadad secrets-fil startar inte tjänsten.
 
 En installation utan krypterade secrets startar utan adminlösenord och kan användas utan AI.
+
+## Privat fjärråtkomst med Tailscale Serve
+
+Dokumentverkstad kan nås från egna enheter via Tailscale Serve utan att webbservern ändras från `127.0.0.1`.
+
+Modellen är:
+
+```text
+Mobil/iPad/annan egen dator
+    ↓
+Tailscale tailnet
+    ↓
+Tailscale Serve
+    ↓
+127.0.0.1:8000
+    ↓
+Dokumentverkstad
+```
+
+Tailscale ska vara installerat och autentiserat på serverdatorn. Klientenheten måste också vara inloggad i samma tailnet eller tillåten av tailnetets policy.
+
+Starta först Dokumentverkstad lokalt:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad start
+```
+
+Starta därefter Serve mot den lokala porten:
+
+```powershell
+tailscale serve 8000
+```
+
+Om du vill vara explicit om localhost-målet kan du i stället använda:
+
+```powershell
+tailscale serve localhost:8000
+```
+
+Kontrollera aktiv Serve-konfiguration:
+
+```powershell
+tailscale serve status
+```
+
+Statusutskriften visar vilken tailnet-adress eller MagicDNS-URL som ska öppnas på mobil, iPad eller annan dator. Öppna den adressen från en enhet som har åtkomst i tailnetet.
+
+Stäng av/resetta Serve-konfigurationen:
+
+```powershell
+tailscale serve reset
+```
+
+Använd inte Tailscale Funnel för Dokumentverkstad i denna iteration. Tjänsten ska inte exponeras publikt mot internet.
+
+Säkerhetsmodellen i 8.4a är nätverksbaserad: Tailscale/tailnetet avgör vem som kan nå webbgränssnittet. Det finns inget separat webb-login eller sessionsautentisering. Alla enheter och användare som har nätverksåtkomst till tjänsten kan använda webbgränssnittet. Adminlösenordet för krypterade secrets är bara en lokal upplåsning vid processstart och är inte ett webb-login. Om tjänsten senare delas med andra användare eller exponeras på annat sätt måste webbautentisering och behörigheter omprövas.
 
 Kontrollera installationen:
 
@@ -81,6 +140,7 @@ runtime_root = ".dokumentverkstad/runtime"
 ingest_source = ".dokumentverkstad/ingest"
 host = "127.0.0.1"
 port = 8000
+upload_max_bytes = 262144000
 ai_provider = "openai"
 ai_model = "gpt-5.6-luna"
 ai_max_output_tokens = 6000
@@ -125,6 +185,7 @@ Om katalogen saknas skapas den automatiskt vid start.
 Efter Iteration 8.2 används runtime för:
 
 * staging-kopia vid PDF-ingest,
+* säker staging för webb-uppladdade PDF-filer,
 * färdigbehandlade ingest-filer i `runtime_root/ingest/processed`,
 * SQLite-index över Documents,
 * lokal diagnostiklogg i `runtime_root/logs/dokumentverkstad.log`.
@@ -206,6 +267,43 @@ Endast PDF med maskinläsbar text stöds. OCR finns inte.
 Metadata prioriteras enkelt: användbar PDF-metadata används först, filnamnsmönstret används som fallback för titel och år, och manuell redigering räknas därefter som användarens korrigering. Originalfilens namn sparas alltid.
 
 Om en PDF inte kan bearbetas ligger den kvar i Ingest Source så att felet kan undersökas och filen kan försökas igen senare.
+
+## Webb-upload av PDF
+
+Öppna:
+
+```text
+/upload
+```
+
+eller välj länken "Lägg till PDF" från Inbox.
+
+Uploadflödet accepterar PDF-filer från desktop och mobil webbläsare. När en PDF laddas upp behandlas den som en vanlig ingest-PDF:
+
+* filen tas emot i säker staging under Runtime,
+* klientens filnamn saneras och får inte styra lokal sökväg,
+* innehållet kontrolleras så att det ser ut som PDF, inte bara att filändelsen är `.pdf`,
+* SHA-256-checksumma beräknas,
+* exakta dubbletter stoppas,
+* PDF-text och metadata extraheras,
+* filnamn på formen `ÅÅÅÅ Titel.pdf` används som fallback för titel och år,
+* originalfilen sparas i Archive,
+* det nya dokumentet hamnar i Inbox,
+* SQLite-indexet byggs om.
+
+Webb-upload skapar alltså inte en separat typ av Document. En PDF är ett vanligt Document oavsett om den kom från Ingest Source eller från webbläsaren.
+
+Standardgränsen för upload är:
+
+```toml
+upload_max_bytes = 262144000
+```
+
+Det motsvarar 250 MB och är valt för att rymma stora skannade eller bildrika PDF-filer utan att göra webbservern obegränsad. Värdet kan ändras i `dokumentverkstad.toml`.
+
+Om samma PDF redan finns i Archive skapas inget nytt Document. Webbgränssnittet visar då att PDF-filen redan finns i Archive.
+
+Andra filformat än PDF avvisas i 8.4a. EPUB, DOCX, OCR och liknande import ligger utanför denna iteration.
 
 ## Inbox
 
@@ -639,7 +737,7 @@ Manuella Documents har normalt bara `metadata.json`.
 
 ## Begränsningar
 
-Följande finns inte efter Iteration 6:
+Följande finns inte efter Iteration 8.4a:
 
 * automatiska permanenta raderingar,
 * lokal AI,
@@ -652,9 +750,25 @@ Följande finns inte efter Iteration 6:
 * AI-genererade General Insights,
 * OCR,
 * EPUB-import,
+* EPUB-/DOCX-upload,
 * avancerad sökning,
 * PDF-highlights,
 * egen PDF-läsare,
+* separat webb-login eller sessionsautentisering,
+* PWA, native mobile-app eller Share Sheet-extension,
 * automatisk bakgrundsbevakning av Ingest Source.
 
-PDF-ingest körs som ett explicit kommando. Det är ett enkelt registreringsflöde, inte en kontinuerlig tjänst.
+Katalogbaserad PDF-ingest körs som ett explicit kommando. Webb-upload är en manuell webbfunktion. Inget av flödena är en kontinuerlig bakgrundstjänst.
+
+## Manuellt acceptanstest för fjärråtkomst
+
+Det verkliga Tailscale-flödet behöver verifieras manuellt på dina enheter:
+
+1. Starta Dokumentverkstad på serverdatorn med `python -m dokumentverkstad start`.
+2. Starta Tailscale Serve med `tailscale serve 8000` eller `tailscale serve localhost:8000`.
+3. Kontrollera adressen med `tailscale serve status`.
+4. Anslut mobil, iPad eller annan dator till samma tailnet.
+5. Öppna Serve-adressen från klientenheten.
+6. Navigera i Documents och Inbox.
+7. Ladda upp en verklig PDF via "Lägg till PDF".
+8. Verifiera att den visas som ett normalt Document i Archive/Inbox.
