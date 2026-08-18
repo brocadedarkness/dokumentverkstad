@@ -10,6 +10,23 @@ Aktuell användardokumentation finns i:
 
 Guiden beskriver den funktionalitet som faktiskt finns implementerad.
 
+Kort startflöde:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad init
+python -m dokumentverkstad start
+```
+
+För krypterad lokal lagring av OpenAI API key:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad init --with-openai
+```
+
+Krypterade secrets lagras separat från Archive i `.dokumentverkstad/secrets.enc`.
+
 ## Projektdokumentation
 
 Projektets auktoritativa dokumentation finns i `docs/`.

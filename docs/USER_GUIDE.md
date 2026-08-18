@@ -1,8 +1,28 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 7.1.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.1.
 
 Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
+
+## Första initiering
+
+Från projektets rot:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad init
+```
+
+Detta skapar standardconfig, Archive, Runtime och Ingest Source om de saknas. Befintlig config skrivs inte över.
+
+För att samtidigt skapa krypterad secrets-lagring och spara en OpenAI API key:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad init --with-openai
+```
+
+Du får då ange ett adminlösenord två gånger och därefter API-nyckeln. Både adminlösenord och API-nyckel läses utan terminal-echo.
 
 ## Starta Dokumentverkstad
 
@@ -10,15 +30,10 @@ Från projektets rot:
 
 ```powershell
 $env:PYTHONPATH = "src"
-python -m dokumentverkstad run
+python -m dokumentverkstad start
 ```
 
-Om inget kommando anges startar webbservern också:
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m dokumentverkstad
-```
+`run` fungerar också och är samma startflöde. Om inget kommando anges startar webbservern också.
 
 Som standard körs webbgränssnittet på:
 
@@ -27,6 +42,19 @@ http://127.0.0.1:8000/
 ```
 
 Startsidan är Inbox.
+
+Om `.dokumentverkstad/secrets.enc` finns begär startflödet adminlösenord innan webbservern startar. Vid fel lösenord eller skadad secrets-fil startar inte tjänsten.
+
+En installation utan krypterade secrets startar utan adminlösenord och kan användas utan AI.
+
+Kontrollera installationen:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad status
+```
+
+Status visar config-, Archive- och Runtime-sökvägar, om katalogerna är tillgängliga, om krypterade secrets finns och om OpenAI credential är konfigurerad. Själva API-nyckeln visas aldrig.
 
 ## Konfiguration
 
@@ -53,6 +81,7 @@ ai_max_output_tokens = 6000
 ai_output_language = "sv"
 ai_currency = "USD"
 ai_cost_limit = 0
+encrypted_secrets_path = ".dokumentverkstad/secrets.enc"
 secrets_path = ".dokumentverkstad/secrets.toml"
 ```
 
@@ -60,7 +89,7 @@ Relativa sökvägar tolkas relativt config-filens katalog.
 
 Om katalogerna inte finns skapas de normalt automatiskt första gången Dokumentverkstad används.
 
-Om du vill använda andra kataloger ändrar du `archive_root`, `runtime_root`, `ingest_source` eller `secrets_path` i config-filen. Ange kataloger som programmet har rätt att skapa och skriva till.
+Om du vill använda andra kataloger ändrar du `archive_root`, `runtime_root`, `ingest_source`, `encrypted_secrets_path` eller `secrets_path` i config-filen. Ange kataloger som programmet har rätt att skapa och skriva till.
 
 ## Archive Root
 
@@ -317,19 +346,59 @@ ai_max_output_tokens = 6000
 API-nyckeln söks i denna ordning:
 
 1. miljövariabeln `OPENAI_API_KEY`,
-2. lokal secrets-fil enligt `secrets_path`, normalt `.dokumentverkstad/secrets.toml`,
-3. ingen konfigurerad AI-provider.
+2. upplåsta krypterade secrets enligt `encrypted_secrets_path`, normalt `.dokumentverkstad/secrets.enc`,
+3. legacy `secrets.toml` enligt `secrets_path`,
+4. ingen credential.
 
-Exempel på secrets-fil:
+Miljövariabeln finns kvar för utveckling och kompatibilitet. Normal lokal drift bör använda krypterade secrets.
 
-```toml
-[openai]
-api_key = "..."
+Skapa eller ersätt OpenAI API key senare:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad secrets set-openai
 ```
 
-Secrets-filen ligger lokalt på maskinen, inte i Archive. Den ska inte versionshanteras och är ignorerad i Git.
+Ta bort OpenAI API key:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad secrets remove-openai
+```
+
+Initiera krypterade secrets utan API-nyckel:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad secrets init
+```
+
+Secrets-filen ligger lokalt på maskinen, inte i Archive. `.dokumentverkstad/secrets.enc` är ignorerad i Git. Den krypterade filen använder JSON-envelope med `version`, `kdf`, `kdf_parameters`, `salt`, `cipher`, `nonce` och `ciphertext`. Payloaden innehåller initialt provider-data som kan innehålla `providers.openai.api_key`.
+
+Kryptering:
+
+* KDF: `scrypt` med `n = 16384`, `r = 8`, `p = 1`, `length = 32`.
+* Salt: 16 slumpmässiga bytes per filskrivning.
+* AEAD: AES-256-GCM.
+* Nonce: 12 slumpmässiga bytes per filskrivning.
+
+Legacy `.dokumentverkstad/secrets.toml` kan fortfarande läsas om ingen miljövariabel eller upplåst encrypted secret finns. Den skrivs inte om eller raderas automatiskt. Migrera genom att köra `python -m dokumentverkstad secrets set-openai`, verifiera att AI fungerar, och ta sedan bort eller arkivera legacy-filen manuellt.
 
 Om ingen API-nyckel finns kan webbappen fortfarande startas. När du försöker använda AI visas ett begripligt meddelande om att nyckel saknas.
+
+## Glömt adminlösenord
+
+Adminlösenordet kan inte återställas. Det skyddar endast secrets, inte Archive.
+
+Om lösenordet glöms bort:
+
+1. kassera `.dokumentverkstad/secrets.enc`,
+2. återkalla gamla externa API-nycklar hos leverantören,
+3. kör `python -m dokumentverkstad secrets init` eller `python -m dokumentverkstad init --with-openai`,
+4. skapa och spara en ny API-nyckel,
+5. fortsätt använda samma Archive.
+
+Archive påverkas inte av att secrets-filen byts ut.
 
 ## Köra AI-analys
 
@@ -478,7 +547,8 @@ Exempel:
       processed/
     sqlite/
       documents.sqlite3
-  secrets.toml
+  secrets.enc
+  secrets.toml  (legacy, om den finns)
   ingest/
     rapport.pdf
 ```
