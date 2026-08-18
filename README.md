@@ -18,6 +18,15 @@ python -m dokumentverkstad init
 python -m dokumentverkstad start
 ```
 
+Backup, restore och index-återskapande:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad backup
+python -m dokumentverkstad restore dokumentverkstad-backup-2026-08-18T103000Z.zip
+python -m dokumentverkstad rebuild-index
+```
+
 För krypterad lokal lagring av OpenAI API key:
 
 ```powershell
@@ -26,6 +35,7 @@ python -m dokumentverkstad init --with-openai
 ```
 
 Krypterade secrets lagras separat från Archive i `.dokumentverkstad/secrets.enc`.
+De ingår inte i vanlig backup och behöver konfigureras separat efter restore.
 
 ## Projektdokumentation
 

@@ -1,6 +1,6 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.1.
+Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.2.
 
 Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
 
@@ -108,7 +108,7 @@ Här sparas:
 * AI-körningar och AI-kandidaters proveniens,
 * Trash-status för Documents.
 
-Archive är den auktoritativa datakällan. Runtime och index kan återskapas från Archive.
+Archive är den auktoritativa datakällan. Runtime och index kan återskapas från Archive. En vanlig backup innehåller Archive men inte Runtime, Ingest Source eller secrets.
 
 ## Runtime Root
 
@@ -116,12 +116,13 @@ Archive är den auktoritativa datakällan. Runtime och index kan återskapas fr�
 
 Om katalogen saknas skapas den automatiskt vid start.
 
-Efter Iteration 6 används runtime för:
+Efter Iteration 8.2 används runtime för:
 
 * staging-kopia vid PDF-ingest,
+* färdigbehandlade ingest-filer i `runtime_root/ingest/processed`,
 * SQLite-index över Documents.
 
-Runtime ska inte betraktas som beständig användardata.
+Runtime ska inte betraktas som beständig användardata. Hela `runtime_root` kan tas bort och återskapas från Archive genom `rebuild-index`; pågående eller obehandlade filer ska ligga i Ingest Source eller Archive, inte i Runtime.
 
 ## Ingest Source
 
@@ -400,6 +401,72 @@ Om lösenordet glöms bort:
 
 Archive påverkas inte av att secrets-filen byts ut.
 
+## Backup
+
+Skapa en backup från projektets rot:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad backup
+```
+
+Backupfilen skapas som standard i aktuell katalog med ett namn på formen:
+
+```text
+dokumentverkstad-backup-2026-08-18T103000Z.zip
+```
+
+Du kan välja målkatalog:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad backup --output-dir C:\Backups
+```
+
+Backupen är ett vanligt ZIP-arkiv. Den innehåller:
+
+* `backup-manifest.json` med backupformat, skapandetid, applikationsversion och objekträknare,
+* `config/portable.json` med portabel icke-hemlig AI-konfiguration,
+* `archive/` med Dokumentverkstads öppna Archive-struktur.
+
+Backupen innehåller inte:
+
+* `.dokumentverkstad/secrets.enc`,
+* legacy `.dokumentverkstad/secrets.toml`,
+* adminlösenord eller API-nycklar,
+* Runtime eller SQLite-index,
+* Ingest Source,
+* staging- eller processed-ingest-filer.
+
+Backup-kommandot skriver först till en temporär fil och byter namn när ZIP-filen har skapats och verifierats. En befintlig backupfil skrivs inte över; kommandot väljer ett unikt namn.
+
+## Restore
+
+Återställ en backup till en ny eller tom installation:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad restore dokumentverkstad-backup-2026-08-18T103000Z.zip
+```
+
+Restore validerar ZIP-filen, manifestet och alla sökvägar innan Archive skrivs. ZIP-medlemmar med `../`, absoluta paths, Windows-drive-prefix eller backslash-paths avvisas.
+
+Restore skriver inte tyst över ett Archive som redan innehåller filer. Om du uttryckligen vill ersätta ett befintligt Archive:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad restore dokumentverkstad-backup-2026-08-18T103000Z.zip --force
+```
+
+Även med `--force` valideras backupen och packas upp till staging innan befintligt Archive ersätts.
+
+Efter restore återskapas SQLite-indexet automatiskt från Archive. Secrets återställs inte; konfigurera dem separat med exempelvis:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m dokumentverkstad secrets set-openai
+```
+
 ## Köra AI-analys
 
 AI-analys startas från ett Document som har extraherad text, exempelvis ett PDF-dokument som registrerats med `process-ingest`.
@@ -515,6 +582,8 @@ runtime_root/sqlite/documents.sqlite3
 ```
 
 Indexet är inte auktoritativt.
+
+Om hela `runtime_root` har tagits bort skapar `rebuild-index` nödvändiga runtime-kataloger och bygger indexet på nytt från Archive.
 
 ## Katalogstruktur
 

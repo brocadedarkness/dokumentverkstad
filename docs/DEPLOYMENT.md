@@ -158,6 +158,12 @@ Servern bör kompletteras med regelbunden backup, exempelvis Time Machine.
 
 Arkivet är den viktigaste tillgången och ska kunna återställas oberoende av serverns runtime-data.
 
+Dokumentverkstads inbyggda backup är en portabel ZIP-förpackning av Archive och ett litet manifest. Den innehåller inte Runtime, SQLite-index, Ingest Source eller secrets.
+
+Restore ska göras till en ny eller tom installation, eller med ett uttryckligt `--force`-val efter att backupfilen har validerats. Efter restore byggs Runtime/index upp igen från Archive.
+
+Backupen återställer inte absoluta sökvägar, host, port eller andra maskinspecifika driftval från den gamla datorn. Den nya installationens lokala konfiguration avgör var Archive, Runtime och secrets ligger.
+
 ---
 
 # Framtida utveckling
