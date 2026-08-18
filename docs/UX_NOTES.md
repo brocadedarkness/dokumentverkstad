@@ -774,6 +774,12 @@ Testa att istället låta användaren komma tillbaka till documents-sidan efter 
 
 Utgivningsår bör vara default i sorteringen av documents-vyn, inte Senast tillagd.
 
+Att skapa nya Documents utan uppladdning genom ingest behöver inte vara den översta funktionen i denna vy. Än så länge har detta skett väldigt sällan. Att skapa nya documents utan ingest bör betraktas som ett specialfall och skulle kunna ha en egen ingång.
+
 ### Projects
 
 Projects används som användarcentrerade sammanhang snarare än som en konsekvent ämnesklassifikation. Ett Project uttrycker i första hand varför ett Document är relevant för mitt arbete, inte vad dokumentet objektivt handlar om. Under genomgången av det importerade arkivet uppstår en tendens att vilja Project-klassificera alla Documents, vilket riskerar att skapa ett stort antal Projects med oklar funktion. Det kan vara bättre att låta Documents sakna Project tills ett faktiskt användningssammanhang uppstår. Det behöver observeras vidare innan Project-modellen förändras eller en separat tagg-/ämnesmodell övervägs.
+
+### AI review
+
+När ett dokument gått igenom en AI-review och hamnat i inboxen, behöver inboxen också innehålla en länk till dokumentet.
