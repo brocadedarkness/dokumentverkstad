@@ -68,3 +68,14 @@ AI-genererade Questions skulle kunna användas som vägledning vid snabb manuell
 # Archival integrity / TDR alignment
 
 Utvärdera Dokumentverkstads Archive och backupmodell mot etablerade principer för långsiktigt digitalt bevarande, särskilt BagIt (RFC 8493), CoreTrustSeal och relevanta delar av ISO 16363. Överväg BagIt-kompatibla preservation packages, periodisk fixity checking, dokumenterad preservation policy och verifierbara restore-tester. Målet är inte formell certifiering utan att tekniska designbeslut där det är rimligt ska vara förenliga med etablerad digital preservation practice.
+
+# Runtime lifecycle / cleanup
+
+Definiera livscykel och automatisk städning för härledda och temporära Runtime-data. Runtime ska kunna raderas i sin helhet utan informationsförlust och återskapas från Archive. Processade ingest-kopior och staging-filer ska inte bevaras längre än de behövs för säker bearbetning eller diagnostik. Index och andra cachedata får behållas av prestandaskäl men ska alltid vara reproducerbara.
+
+# OCR för bildbaserade PDF:er
+
+Upptäck Documents där vanlig PDF-textutvinning ger ingen eller otillräcklig text. Använd lokalt OCR-stöd via PyMuPDF/Tesseract för relevanta sidor. Originalfilen ska aldrig förändras. OCR-text ska lagras som härledd processing-data med proveniens, språk och engine/version. OCR ska inte köras när vanlig textutvinning redan ger användbar text.
+
+* OCR pipeline: lokal Tesseract-baserad OCR för bild-PDF och bildsidor, med proveniens och reproducerbar textutvinning.
+* Multimodal document analysis: lokal visuell modell för bildbaserade eller visuellt komplexa sidor; används som analyslager, inte som ersättning för arkiverad OCR-text.

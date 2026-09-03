@@ -1295,41 +1295,88 @@ Dessa frågor hör till senare iterationer.
 
 ## Implementationsordning
 
-Iteration 8 bör implementeras stegvis snarare än som ett enda stort förändringspaket.
+Iteration 8 implementeras stegvis snarare än som ett enda förändringspaket.
 
-En lämplig ordning är:
+Under verklig användning har iterationen delats upp i mindre delar för att hålla förändringarna granskningsbara och för att undvika att flera arkitekturbeslut införs samtidigt.
 
 ### 8.1 – Initiering, CLI och secrets
 
-- initieringsflöde,
-- grundläggande driftkommandon,
-- krypterad secrets-lagring,
-- säker start.
+Omfattar:
+
+* initieringsflöde,
+* grundläggande driftkommandon,
+* krypterad secrets-lagring,
+* säker start,
+* status för installation och AI-konfiguration.
+
+**Status: genomförd.**
 
 ### 8.2 – Backup, restore och reproducerbar Runtime
 
-- backup,
-- restore,
-- portabilitet,
-- rebuild-index,
-- verifiering av Archive som auktoritativ källa.
+Omfattar:
+
+* backup,
+* restore,
+* portabilitet,
+* rebuild-index,
+* verifiering av Archive som auktoritativ källa,
+* verifiering att Runtime kan raderas utan informationsförlust.
+
+Backup ska endast innehålla långlivad information och nödvändig portabel konfiguration. Secrets och Runtime ska inte ingå.
+
+**Status: genomförd och verifierad mot ett verkligt Archive.**
 
 ### 8.3 – Trash, drift och diagnostik
 
-- färdig Trash-hantering,
-- restore från Trash,
-- driftstatus,
-- diagnostik och loggning.
+Omfattar:
 
-### 8.4 – Fjärråtkomst och vardagsanvändning från andra enheter
+* Trash-hantering för Documents,
+* Restore från Trash,
+* säker permanent radering där detta är möjligt,
+* driftstatus,
+* diagnostik,
+* loggning,
+* kontroll av Archive, Runtime och index.
 
-- konfigurerbar nätverksåtkomst,
-- dokumenterad Tailscale-användning,
-- mobil ingest,
-- verifiering av användning från mobil eller annan dator,
-- hantering av långvariga AI-operationer.
+**Status: genomförd.**
 
-Dessa delsteg förändrar inte Iteration 8:s övergripande mål. De används för att hålla implementationen granskningsbar och undvika att flera arkitekturbeslut införs samtidigt.
+### 8.4a – Fjärråtkomst och webb-ingest
+
+Omfattar:
+
+* möjlighet att nå Dokumentverkstad från en annan egen enhet,
+* dokumenterad användning tillsammans med Tailscale,
+* PDF-uppladdning genom webbgränssnittet,
+* gemensamt ingest-flöde för lokal och webbaserad uppladdning,
+* säker staging av uppladdade filer,
+* samma checksumme-, dublett- och Archive-semantik oavsett ingest-väg.
+
+Dokumentverkstad ska inte göras arkitektoniskt beroende av Tailscale.
+
+Webbservern ska fortsatt kunna köras lokalt och behöver inte i denna deliteration exponeras öppet mot internet.
+
+**Status: implementerad. Verifiering från andra egna enheter återstår som praktiskt driftstest.**
+
+### 8.4b – Långvariga AI-operationer
+
+AI-analyser kan ta omkring en minut eller mer och ska därför inte göra det normala webbgränssnittet oanvändbart medan analysen pågår.
+
+Denna deliteration ska undersöka och vid behov införa ett enkelt bakgrundsflöde för AI-analyser.
+
+Målet är att:
+
+* användaren kan starta en AI-analys och därefter fortsätta använda Dokumentverkstad,
+* ett Document tydligt kan visa att AI-analys pågår,
+* en färdig analys kan öppnas för review utan att användaren behöver leta efter den,
+* befintlig AI-run-semantik och proveniens bevaras,
+* fel och avbrutna körningar kan diagnostiseras,
+* serveromstart och andra relevanta felsituationer får ett definierat beteende.
+
+Inför inte en distribuerad jobbkösarkitektur om en enklare lösning räcker.
+
+Den exakta interaktionen ska samordnas med Iteration 9 så att bakgrundsjobb passar in i Dokumentverkstads konsoliderade gränssnitt.
+
+**Status: återstår.**
 
 ---
 
@@ -1337,75 +1384,567 @@ Dessa delsteg förändrar inte Iteration 8:s övergripande mål. De används fö
 
 Iteration 8 är klar när följande scenario fungerar:
 
-> Anders använder Dokumentverkstad som ett långlivat vardagsverktyg med ett verkligt dokumentarkiv. Tjänsten kan startas utan manuell hantering av secrets, nås kontrollerat från hans egna enheter och ta emot nya PDF:er även därifrån. Han kan skapa en backup av hela sitt kunskapsarkiv och återställa den på en ny installation. Runtime kan raderas och återskapas från Archive utan dataförlust. När något går fel finns tillräcklig diagnostik för att förstå problemet utan att känsliga uppgifter exponeras.
+> Anders använder Dokumentverkstad som ett långlivat vardagsverktyg med ett verkligt dokumentarkiv. Tjänsten kan startas utan manuell hantering av secrets, nås kontrollerat från andra egna enheter och ta emot nya PDF:er därifrån. Han kan skapa en backup av hela sitt kunskapsarkiv och återställa den på en ny installation. Runtime kan raderas och återskapas från Archive utan dataförlust. Långvariga AI-operationer hindrar inte fortsatt arbete och när något går fel finns tillräcklig diagnostik för att förstå problemet utan att känsliga uppgifter exponeras.
 
 Efter Iteration 8 ska Dokumentverkstad inte bara fungera som program.
 
 Den ska gå att förvalta som ett personligt, långlivat kunskapsarkiv.
 
-# Iteration 9 – Konsolidering
+# Iteration 9 – Konsolidera arbetsytan
 
-## Mål
+## Syfte
 
-Iteration 9 syftar inte till att införa ny kärnfunktionalitet.
+Dokumentverkstad används nu i verkligt arbete med ett Archive som innehåller hundratals Documents och ett växande antal Knowledge Objects.
 
-Målet är istället att konsolidera Dokumentverkstad till ett sammanhängande, snabbt och intuitivt arbetsverktyg.
+Grundflödet fungerar.
 
-Efter denna iteration ska hela arbetsflödet upplevas som naturligt även vid daglig användning.
+Iteration 9 ska därför inte introducera en ny domänmodell eller större ny kärnfunktionalitet. Den ska göra de befintliga funktionerna till ett sammanhängande arbetsverktyg.
 
-## Fokusområden
+Utgångspunkten är:
 
-Iterationen omfattar framför allt:
+* observationerna i `UX_NOTES.md`,
+* erfarenheter från verklig daglig användning,
+* de framtagna designskisserna,
+* de arbetsflöden som redan visat sig fungera.
 
-* förbättrad informationsarkitektur,
-* förbättrad navigering,
-* effektivare arbetsflöden,
-* förbättrad layout och typografi,
-* konsekvent interaktion mellan systemets olika vyer.
+Iteration 9 är både en UX-iteration och en visuell designiteration.
 
-## Utgångspunkt
+Visuell förändring ska dock alltid stödja informationsarkitektur och arbetsflöde. Funktion ska styra form.
 
-Utgångspunkten är verklig användning.
+## Grundprincip
 
-Förändringar ska i första hand bygga på observationer från UX_NOTES.md och praktisk användning av systemet, inte på spekulativ design.
+> Användaren ska arbeta med dokument, kunskap och egna tankar – inte med Dokumentverkstads interna modell.
 
-## Exempel på förbättringar
+Gränssnittet ska därför prioritera:
 
-Exempel på förbättringar som kan ingå:
+1. innehållet användaren arbetar med,
+2. den handling som är naturlig i det aktuella sammanhanget,
+3. orientering och navigation,
+4. teknisk eller administrativ information först när den behövs.
 
-* förbättrad Inbox,
-* effektivare Capture,
-* bättre Document-vy,
-* bättre Project-vy,
-* tangentbordsgenvägar,
-* swipe-gester,
-* drag-and-drop där det förenklar arbetsflödet,
-* förbättrad mobilanpassning,
-* förbättrad e-ink-användning,
-* tydligare typografi,
-* bättre spacing,
-* färger och visuell hierarki,
-* snabbare navigering mellan relaterade objekt,
-* bättre återkoppling efter användarhandlingar.
+Interna ID:n, implementationstekniska begrepp och sällan använda funktioner ska inte dominera normala arbetsytor.
 
-Listan är inte uttömmande.
+## Arbetsflöden
 
-Iterationen ska styras av faktisk användning.
+Iteration 9 ska framför allt konsolidera följande arbetsflöden.
 
-## Designprincip
+### Fånga en tanke
 
-Varje förändring ska minska friktion i ett verkligt arbetsflöde.
+Capture ska fortsätta vara ett lågfriktionsflöde.
 
-Ingen förändring ska införas enbart därför att den ser modern eller estetiskt tilltalande ut.
+Det ska vara möjligt att:
 
-## Leverans
+* snabbt skapa en fristående Capture,
+* skapa en Capture i ett Document,
+* skapa en Capture i ett Project där detta är naturligt,
+* skriva en Capture samtidigt som användaren läser annat innehåll,
+* återvända till tidigare Captures som minnesanteckningar.
 
-När Iteration 9 är färdig ska Dokumentverkstad upplevas som ett sammanhängande arbetsverktyg snarare än en samling funktioner.
+Capture ska inte kräva att användaren först klassificerar eller organiserar tanken.
 
-Systemets användbarhet ska förbättras utan att förändra dess grundläggande domänmodell eller arbetsprocess.
+Principen:
+
+> Capture first, organize later.
+
+ska bevaras.
+
+### Arbeta med ett Document
+
+Document-vyn ska fungera som den naturliga arbetsytan kring ett dokument.
+
+Användaren ska snabbt kunna förstå:
+
+* vilket dokument detta är,
+* dess centrala metadata,
+* vad användaren själv tidigare har tänkt om dokumentet,
+* vilken AI-analys som finns,
+* vilka Projects dokumentet hör till,
+* vilka relevanta handlingar som går att utföra.
+
+Egna Captures ska vara lätta att återfinna och tydligt skiljas från AI-genererat material.
+
+Capture ska vara tillgängligt utan att användaren behöver lämna det innehåll som läses.
+
+Original-PDF ska kunna öppnas utan att Dokumentverkstads arbetsyta försvinner, exempelvis i en ny webbläsarflik.
+
+Metadataredigering ska vara tillgänglig men behöver inte dominera arbetsytan.
+
+### Orientera sig bland Documents
+
+Documents-vyn är en navigationsyta för ett växande Archive.
+
+Den funktionalitet som etablerades i Iteration 7.2 ska bevaras:
+
+* snabbfilter,
+* sortering,
+* Project-filter,
+* AI-status,
+* antal Captures,
+* central metadata.
+
+Utgivningsår ska vara naturlig standardordning så länge verklig användning inte visar något annat.
+
+Manuellt skapande av Document utan ingest är ett specialfall och ska inte dominera denna vy.
+
+Den visuella utformningen ska göra det lätt att skanna stora mängder dokument utan att informationsmängden blir tung.
+
+### Arbeta med Inbox
+
+Inbox är en arbetsyta för sådant som behöver ett användarbeslut.
+
+Den ska inte upplevas som ett alternativt dokumentarkiv.
+
+När flera objekt väntar ska användaren snabbt kunna förstå:
+
+* hur mycket som återstår,
+* vilken typ av beslut som behöver fattas,
+* vad som redan har behandlats,
+* vart användaren går efter ett beslut.
+
+Onödiga omladdningar och navigationssteg ska minimeras.
+
+Undersök om flera enkla beslut kan genomföras effektivare utan att varje objekt måste behandlas genom ett fullständigt separat sidflöde.
+
+Inför inte massredigering enbart för att funktionen är möjlig. Den ska införas endast om den tydligt minskar den friktion som observerats vid större Inboxar.
+
+AI-review ska ge en naturlig väg tillbaka till det Document som analyserats.
+
+### Arbeta med Projects
+
+Projects ska behandlas som användarcentrerade sammanhang.
+
+Ett Project beskriver i första hand:
+
+> varför något är relevant för användarens arbete,
+
+inte nödvändigtvis:
+
+> vad ett dokument objektivt handlar om.
+
+Iteration 9 ska därför inte försöka göra Projects till en fullständig ämnesklassifikation.
+
+Documents får sakna Project.
+
+Project-vyn ska i första hand visa det material användaren arbetar med:
+
+* relevanta Documents,
+* Captures och andra Knowledge Objects,
+* aktuella arbetsmöjligheter.
+
+Project-metadata ska finnas men behöver inte dominera arbetsytan.
+
+Explicita relationer mellan Knowledge Objects ska inte ges en central plats i gränssnittet innan verklig användning visar att de behövs.
+
+## Navigation
+
+Dokumentverkstad ska få en tydlig och konsekvent informationsarkitektur.
+
+Det ska vara lätt att röra sig mellan åtminstone:
+
+* Inbox,
+* Documents,
+* Projects,
+* fristående Capture,
+* aktuellt Document,
+* aktuellt Project.
+
+Navigationen ska fungera på både desktop och mindre skärmar.
+
+Användaren ska inte behöva förstå URL-struktur eller använda webbläsarens bakåtknapp som huvudsaklig navigationsmodell.
+
+När en handling leder till ett nytt tillstånd ska nästa naturliga steg vara tydligt.
+
+## AI i gränssnittet
+
+AI ska fortsatt vara rådgivare, inte auktoritet.
+
+Gränssnittet ska tydligt skilja mellan:
+
+* användarskapat innehåll,
+* accepterat AI-genererat innehåll,
+* AI-kandidater som väntar på review,
+* AI-analys som pågår,
+* misslyckad eller avbruten AI-analys.
+
+AI Questions ska presenteras som frågor som AI-analysen väcker, inte som frågor dokumentet nödvändigtvis besvarar.
+
+Om Iteration 8.4b inför bakgrundskörning ska dess status och återkoppling integreras i samma visuella språk.
+
+## Visuellt designsystem
+
+Iteration 9 ska etablera ett konsekvent visuellt designsystem för Dokumentverkstad.
+
+Utgångspunkten är de designskisser som tagits fram före iterationen.
+
+Den övergripande riktningen är ett möte mellan:
+
+* modernistiskt arkiv,
+* bibliotek och dokumentation,
+* återhållsam retrofuturism,
+* geometriska och lätt ockulta referenser.
+
+Det visuella uttrycket får vara särpräglat men ska aldrig göra informationen svårare att läsa.
+
+### Färg
+
+Grundpaletten utgår från:
+
+* **ivory** – huvudsaklig ljus yta,
+* **ebony** – text, struktur och mörka ytor,
+* **cinnabar** – accent, handling och orientering.
+
+Färg ska användas funktionellt och sparsamt.
+
+Gradients ska inte användas.
+
+### Typografi
+
+Typografin ska skapa:
+
+* tydlig hierarki,
+* god läsbarhet,
+* tydlig skillnad mellan dokumentinnehåll, metadata och systeminformation.
+
+Långa texter, Summaries och Captures ska prioriteras som läsinnehåll.
+
+Små tekniska etiketter och metadata kan använda ett mer arkivmässigt eller maskinellt uttryck.
+
+### Identitet
+
+Diskreta systemetiketter kan exempelvis använda former som:
+
+`DOC 0241`
+
+`YR 2025`
+
+`AI COMPLETE`
+
+så länge de bygger på information som faktiskt hjälper användaren.
+
+Geometriska symboler och andra identitetsskapande element får användas för navigation, orientering och visuell karaktär, men inte som dekoration som konkurrerar med innehållet.
+
+## Responsiv design
+
+Iteration 9 ska omfatta både desktop och mobil användning.
+
+Mobilvyn ska inte bara vara desktop-layouten hoptryckt till en smal skärm.
+
+Prioriteringen på mindre skärmar ska utgå från verkliga mobila arbetsflöden, framför allt:
+
+* Inbox,
+* Capture,
+* uppladdning av Document,
+* snabb kontroll av ett Document,
+* enklare AI-review,
+* navigation.
+
+Desktop ska ge bättre utrymme för parallell läsning och Capture där detta minskar friktion.
+
+E-ink kan beaktas genom god kontrast, typografi och begränsat beroende av färg, men särskild e-ink-funktionalitet ska inte byggas utan ett konkret behov.
+
+## Interaktion
+
+Iteration 9 får införa enklare klientbaserad interaktion där detta tydligt förbättrar arbetsflödet.
+
+Det kan exempelvis gälla:
+
+* uppdatering av Inbox utan full sidomladdning,
+* tydlig återkoppling efter en handling,
+* status för pågående AI-jobb,
+* snabbare Capture,
+* enklare filtrering.
+
+Javascript ska användas som ett verktyg för minskad friktion, inte som anledning att bygga om applikationen till en komplex klientapplikation.
+
+Server-rendering får fortsatt vara grundmodell där den fungerar väl.
+
+Tangentbordsgenvägar, swipe och drag-and-drop ska endast införas där ett verkligt arbetsflöde motiverar dem.
+
+## Avgränsning
+
+Iteration 9 ska inte implementera:
+
+* ny generell Project-modell,
+* ämnesklassifikation eller generell taggmodell,
+* semantisk sökning,
+* embeddings,
+* RAG,
+* generell fulltextsökning,
+* MCP-server,
+* OCR,
+* EPUB eller andra nya dokumentformat,
+* lokal AI-modell,
+* multimodal dokumentanalys,
+* automatisk bibliografisk metadatahämtning,
+* generell modell för Document-versioner eller Document-relationer,
+* ny generell Knowledge Object-ontologi.
+
+Sådana behov ska dokumenteras i `UX_NOTES.md` eller backloggen och tas upp i senare iterationer.
+
+## Implementation
+
+Iteration 9 bör genomföras i mindre, visuellt och funktionellt sammanhängande deliterationer.
+
+En möjlig ordning är:
+
+### 9.1 – Designgrund och navigation
+
+* gemensamt visuellt designsystem,
+* typografi,
+* färg,
+* spacing,
+* grundkomponenter,
+* huvudnavigation,
+* desktop- och mobilstruktur.
+
+### 9.2 – Documents och Document
+
+* Documents-lista,
+* Document-arbetsyta,
+* Capture under läsning,
+* presentation av egna Captures,
+* AI-material,
+* metadata,
+* originaldokument.
+
+### 9.3 – Inbox och AI-review
+
+* Inbox-överblick,
+* effektivare triage,
+* review-flöde,
+* återkoppling,
+* integration med bakgrundsjobb.
+
+### 9.4 – Projects och Capture
+
+* Project-vy,
+* fristående Capture,
+* organisering av befintliga Knowledge Objects där befintlig domänmodell medger detta,
+* konsekvent navigation mellan sammanhang.
+
+Deliterationerna får ändras efter att designarbetet konkretiserats.
+
+## Tester
+
+Iteration 9 är godkänd när:
+
+* befintliga kärnflöden fortsatt fungerar,
+* inga Archive-format behöver förändras enbart på grund av designen,
+* Capture kan göras utan onödiga navigationssteg,
+* Documents kan orienteras och filtreras effektivt,
+* ett Document tydligt presenterar metadata, egna Captures och AI-material,
+* Inbox ger tydlig överblick och återkoppling,
+* Projects fungerar som användarcentrerade sammanhang utan att klassifikation framtvingas,
+* navigationen fungerar konsekvent på desktop och mobil,
+* centrala arbetsflöden fungerar utan Javascript där sådan graceful degradation är rimlig,
+* hela den befintliga automatiska testsviten fortsatt passerar.
 
 ## Klart när
 
 Iteration 9 är klar när följande scenario fungerar:
 
-> Anders arbetar en hel dag i Dokumentverkstad utan att tänka på gränssnittet. Han fokuserar på sina dokument och sitt tänkande, medan systemet känns snabbt, naturligt och konsekvent i varje arbetsmoment.
+> Anders öppnar Dokumentverkstad för att arbeta, inte för att administrera systemet. Han hittar snabbt rätt dokument, ser vad han tidigare tänkt om det och kan skriva en ny Capture medan han läser. Ett nytt dokument kan tas om hand genom Inbox och AI-review utan onödiga omladdningar eller orienteringsproblem. Projects hjälper honom att återvända till material utifrån varför det är relevant för hans arbete. Samma kunskapsrum fungerar naturligt från dator, iPad och telefon. Gränssnittet har en tydlig egen identitet men drar inte uppmärksamheten från dokumenten och tänkandet.
+
+# Iteration 10 – Ett kunskapsrum, flera klienter
+
+## Syfte
+
+Hittills har Dokumentverkstad huvudsakligen körts på samma dator som användaren arbetar vid.
+
+Iteration 10 ska verifiera en annan driftmodell:
+
+> Dokumentverkstad har ett enda auktoritativt Archive på en server. Användarens datorer, telefoner och surfplattor är klienter till samma kunskapsrum.
+
+Målet är inte att göra Dokumentverkstad till en publik molntjänst eller ett fleranvändarsystem.
+
+Målet är att göra den befintliga personliga applikationen oberoende av vilken klient användaren råkar arbeta från.
+
+## Grundprincip
+
+Det ska finnas **ett kanoniskt Archive**.
+
+Flera aktiva Dokumentverkstad-installationer med separata Archive som behöver synkroniseras ska undvikas.
+
+Serverns lagringsplats kan förändras över tid utan att Archive-formatet behöver förändras.
+
+Det kan exempelvis vara:
+
+* en hyrd virtuell Linux-server,
+* en framtida egen hemmaserver,
+* en Mac mini,
+* annan maskin med lämplig persistent lagring.
+
+Driftmiljön är utbytbar.
+
+Archive är beständigt.
+
+## Första referensmiljö
+
+En liten hyrd Linux-VPS kan användas som första verkliga referensmiljö.
+
+Syftet är att prova servermodellen utan att först behöva köpa särskild hårdvara.
+
+VPS-lösningen ska inte innebära att Dokumentverkstad görs beroende av en viss molnleverantör.
+
+Applikationen ska fortsatt använda vanliga filer, SQLite där Runtime behöver det och den befintliga Archive-strukturen.
+
+PaaS-lösningar som kräver att Archive flyttas till proprietär databas eller objektlagring ska inte införas enbart för deploymentens skull.
+
+## Arbetsflöde
+
+Användaren ska kunna:
+
+1. öppna Dokumentverkstad i en vanlig webbläsare,
+2. autentisera sig,
+3. använda samma Archive oavsett klient,
+4. ladda upp nya Documents,
+5. göra Captures,
+6. starta och reviewa AI-analyser,
+7. stänga klienten utan att någon lokal Archive-synkronisering behövs.
+
+## Persistent lagring
+
+Archive ska ligga på persistent lagring.
+
+Serverns temporära filsystem eller container-state får inte vara den enda lagringsplatsen för långlivad information.
+
+Runtime ska fortsatt vara härledd och reproducerbar.
+
+Samma invariant gäller:
+
+> Archive är auktoritativt. Runtime är härlett och kan återskapas.
+
+## HTTPS och autentisering
+
+En internetåtkomlig Dokumentverkstad måste skyddas med:
+
+* HTTPS,
+* autentisering,
+* begränsad åtkomst,
+* säker secrets-hantering.
+
+Att känna till serverns URL får inte i sig ge tillgång till Archive.
+
+Den exakta lösningen ska väljas när iterationen genomförs.
+
+Möjliga arkitekturer kan exempelvis använda en autentiserande reverse proxy eller extern access-gateway framför Dokumentverkstad.
+
+Dokumentverkstad ska inte exponeras direkt mot internet utan ett definierat autentiseringslager.
+
+Arbetsplatsens säkerhetspolicy och nätverksbegränsningar ska respekteras. Iterationen ska inte försöka kringgå administrativt införda begränsningar.
+
+## Drift
+
+Servern ska kunna:
+
+* starta automatiskt efter omstart,
+* köras utan ett öppet terminalfönster,
+* rapportera begriplig status,
+* skriva diagnostiska loggar,
+* återhämta sig från normala omstarter,
+* uppdateras på ett kontrollerat sätt.
+
+Normal användning ska inte kräva SSH eller serveradministration.
+
+Administrativa operationer får däremot fortsatt vara CLI-baserade.
+
+## Backup
+
+Central drift gör backup viktigare, inte mindre viktig.
+
+Det ska finnas en definierad strategi för regelbundna backups till en annan lagringsplats än den aktiva serverdisken.
+
+Backupen ska bygga vidare på det format och restore-flöde som etablerades i Iteration 8.
+
+Automatisk backup kan införas om det kan göras enkelt och robust.
+
+En ny backup ska verifieras innan äldre backups tas bort.
+
+Behållning av flera generationer ska föredras framför att endast behålla den senaste kopian.
+
+## Portabilitet och återställning
+
+Det ska vara möjligt att:
+
+1. skapa backup på server A,
+2. skapa en ny installation på server B,
+3. återställa backupen,
+4. återskapa Runtime,
+5. fortsätta använda samma kunskapsrum.
+
+En hyrd VPS ska därför kunna ersättas av exempelvis en framtida hemmaserver utan datamigrering till ett nytt proprietärt format.
+
+## Avgränsning
+
+Iteration 10 ska inte implementera:
+
+* flera användare,
+* samarbetsfunktioner,
+* synkronisering mellan flera Archive,
+* Kubernetes eller distribuerad drift,
+* distribuerad databas,
+* proprietär molnlagring enbart för deployment,
+* publik delning av Documents,
+* MCP,
+* extern AI-åtkomst till Archive.
+
+## Tester
+
+Iteration 10 är godkänd när:
+
+* Dokumentverkstad kan installeras på den valda servermiljön,
+* ett verkligt Archive kan återställas där,
+* Archive ligger på persistent lagring,
+* tjänsten överlever serveromstart,
+* tjänsten nås genom HTTPS,
+* obehörig åtkomst stoppas,
+* Dokumentverkstad fungerar från minst två olika klientenheter,
+* PDF-uppladdning fungerar från fjärrklient,
+* Capture fungerar från fjärrklient,
+* AI-flödet fungerar från fjärrklient,
+* backup kan skapas på servern,
+* backupen kan återställas till en separat installation,
+* Runtime fortsatt kan återskapas från Archive,
+* hela den befintliga testsviten fortsatt passerar.
+
+## Klart när
+
+Iteration 10 är klar när följande scenario fungerar:
+
+> Anders öppnar Dokumentverkstad från en vanlig webbläsare på en dator, en iPad eller en telefon och arbetar alltid mot samma kunskapsrum. Archive finns på en server och behöver inte synkroniseras mellan klienterna. Nya dokument, Captures och AI-resultat blir omedelbart del av samma Archive. Servern kan startas om utan handpåläggning och kunskapsrummet kan säkerhetskopieras och återställas på en annan maskin utan att dess struktur förändras.
+
+# Senare iterationer
+
+Efter Iteration 10 är Dokumentverkstads grundläggande MVP etablerad:
+
+* kunskap kan fångas,
+* Documents kan arkiveras och bearbetas,
+* Projects kan ge användarcentrerade sammanhang,
+* AI kan bidra med granskade kandidater,
+* Archive är portabelt och reproducerbart,
+* gränssnittet är konsoliderat för verklig användning,
+* ett enda kunskapsrum kan användas från flera klienter.
+
+Fortsatt utveckling ska därefter styras av verklig användning och backloggen.
+
+Möjliga senare områden omfattar bland annat:
+
+* read-only MCP och extern AI-åtkomst till kunskapsrummet,
+* fulltextsökning i Documents och Knowledge Objects,
+* OCR för bildbaserade PDF:er,
+* fler dokumentformat, i första hand EPUB,
+* lokal AI,
+* multimodal dokumentanalys,
+* bibliografisk metadatahämtning,
+* Document-relationer och versioner,
+* vidareutvecklad proveniens för relationer,
+* frivilliga semantiska typer för egna Captures,
+* vidareutveckling av Later/Snooze,
+* arkivintegritet och digitalt bevarande,
+* BagIt-kompatibla preservation packages,
+* periodiska fixity-kontroller,
+* utvärdering mot relevanta principer från etablerade Trusted Digital Repository-modeller.
+
+Ingen av dessa punkter är genom sin placering här beslutad för implementation.
+
+De ska prioriteras först när verklig användning visar vilket problem som är viktigast att lösa.

@@ -25,3 +25,4 @@ src/dokumentverkstad.egg-info/
 
 # Lokala konfigurationsfiler (om de innehåller API-nycklar)
 .env
+dokumentverkstad-backup-*.zip
