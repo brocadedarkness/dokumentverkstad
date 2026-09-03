@@ -43,6 +43,20 @@ def _get_with_headers(
     return response.status, headers, body
 
 
+def _get_bytes_with_headers(
+    server: ThreadingHTTPServer, path: str
+) -> tuple[int, dict[str, str], bytes]:
+    connection = HTTPConnection(server.server_address[0], server.server_address[1])
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        body = response.read()
+        headers = {key.lower(): value for key, value in response.getheaders()}
+    finally:
+        connection.close()
+    return response.status, headers, body
+
+
 def _post(server: ThreadingHTTPServer, path: str, body: str) -> tuple[int, str]:
     connection = HTTPConnection(server.server_address[0], server.server_address[1])
     try:
@@ -123,6 +137,55 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Inbox är tom.", html)
             self.assertIn("Trash", html)
             self.assertEqual(html.count("data-ai-inbox-document-id="), 0)
+
+    def test_page_shell_exposes_identity_tokens_and_current_navigation(self) -> None:
+        with workspace_tempdir() as tmp:
+            app = CaptureApp(Archive(Path(tmp) / "archive"))
+
+            inbox_html = app.render_inbox()
+            documents_html = app.render_documents()
+            capture_html = app.render_capture()
+
+            self.assertIn("DOKUMENTVERKSTAD", inbox_html)
+            self.assertIn("личный архивъ знаний ✚", inbox_html)
+            self.assertNotIn("PRIVATE KNOWLEDGE ARCHIVE +", inbox_html)
+            self.assertIn("@font-face", inbox_html)
+            self.assertIn('font-family: "Monomakh"', inbox_html)
+            self.assertIn(
+                'src: url("/static/fonts/Monomakh-Regular.ttf") format("truetype")',
+                inbox_html,
+            )
+            self.assertIn('--font-devis: "Monomakh", var(--font-inscription)', inbox_html)
+            self.assertIn("font-family: var(--font-devis)", inbox_html)
+            self.assertIn("--color-ivory", inbox_html)
+            self.assertIn("--color-ebony", inbox_html)
+            self.assertIn("--color-cinnabar", inbox_html)
+            self.assertIn('class="global-nav"', inbox_html)
+            self.assertIn('href="/inbox" aria-current="page"', inbox_html)
+            self.assertIn('href="/documents" aria-current="page"', documents_html)
+            self.assertIn('href="/capture" aria-current="page"', capture_html)
+            self.assertNotIn(">Claims<", inbox_html)
+            self.assertNotIn(">Insights<", inbox_html)
+
+    def test_local_monomakh_font_asset_is_served(self) -> None:
+        with workspace_tempdir() as tmp:
+            app = CaptureApp(Archive(Path(tmp) / "archive"))
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, headers, body = _get_bytes_with_headers(
+                    server, "/static/fonts/Monomakh-Regular.ttf"
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["content-type"], "font/ttf")
+            self.assertGreater(len(body), 100_000)
+            self.assertEqual(body[:4], b"\x00\x01\x00\x00")
 
     def test_new_document_appears_in_inbox_and_can_be_opened(self) -> None:
         with workspace_tempdir() as tmp:
@@ -1143,6 +1206,32 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn('href="/documents/new"', html)
             self.assertNotIn('<form method="post" action="/documents">', html)
 
+    def test_documents_filter_uses_context_with_grouped_controls(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Långt projektnamn")
+            archive.create_document("Ett dokument")
+            app = CaptureApp(archive)
+
+            html = app.render_documents(
+                query="dokument",
+                sort="title",
+                ai_status="not_analyzed",
+                project_id=project.id,
+            )
+
+            self.assertIn('class="page-workspace has-context"', html)
+            self.assertIn('class="filter-form" id="documents-filter"', html)
+            self.assertEqual(html.count('class="filter-field"'), 4)
+            self.assertIn('name="q" type="search" value="dokument"', html)
+            self.assertIn('name="sort"', html)
+            self.assertIn('value="title" selected', html)
+            self.assertIn('name="project_id"', html)
+            self.assertIn(f'value="{project.id}" selected', html)
+            self.assertIn('name="ai_status"', html)
+            self.assertIn('value="not_analyzed" selected', html)
+            self.assertIn("Nollställ filter", html)
+
     def test_documents_overview_filters_by_metadata_only(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -1348,6 +1437,29 @@ class CaptureAppTests(unittest.TestCase):
 
             self.assertIn(f"/documents/{document.id}/original", html)
             self.assertIn("rapport.pdf", html)
+
+    def test_document_metadata_editing_is_secondary_in_context(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Projekt med långt namn")
+            document = archive.create_document(
+                "Ett mycket långt dokumentnamn som fortfarande ska kunna radbrytas",
+                author="Kungliga biblioteket",
+                year="2024",
+            )
+            archive.save_document(document.with_projects((project.id,)))
+            app = CaptureApp(archive)
+
+            html = app.render_document(document.id)
+
+            self.assertIn('class="page-workspace has-context"', html)
+            self.assertIn('<h2 class="context-title">Document</h2>', html)
+            self.assertIn('<details class="metadata-editor">', html)
+            self.assertIn("<summary>Redigera metadata</summary>", html)
+            self.assertIn(f'action="/documents/{document.id}/metadata"', html)
+            self.assertIn("Källor:", html)
+            self.assertIn(f'href="/projects/{project.id}"', html)
+            self.assertIn("Projekt med långt namn", html)
 
     def test_upload_page_is_reachable_and_linked_from_inbox(self) -> None:
         with workspace_tempdir() as tmp:

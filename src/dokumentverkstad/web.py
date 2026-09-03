@@ -103,6 +103,7 @@ class CaptureApp:
         )
         return self._page(
             title="Capture",
+            active_nav="capture",
             body=f"""
     <h1>Capture</h1>
     {self._render_capture_form(document=document, project=project)}
@@ -130,6 +131,7 @@ class CaptureApp:
 
         return self._page(
             title="Inbox",
+            active_nav="inbox",
             body=f"""
     <h1>Inbox</h1>
     {empty_notice}
@@ -155,6 +157,7 @@ class CaptureApp:
             feedback = f"<p>{escape(error)}</p>"
         return self._page(
             title="Lägg till PDF",
+            active_nav="inbox",
             body=f"""
     <p><a href="/inbox">Inbox</a></p>
     <h1>Lägg till PDF</h1>
@@ -178,6 +181,7 @@ class CaptureApp:
 
         return self._page(
             title="Trash",
+            active_nav="inbox",
             body=f"""
     <h1>Trash</h1>
     <ul>
@@ -302,6 +306,7 @@ class CaptureApp:
         projects = self.archive.list_projects()
         project_names = {project.id: project.name for project in projects}
         items = self._document_list_items()
+        total_count = len(items)
         items = self._filter_document_list_items(
             items,
             query=query,
@@ -329,42 +334,61 @@ class CaptureApp:
 
         return self._page(
             title="Documents",
+            active_nav="documents",
             body=f"""
     <h1>Documents</h1>
-    <p><a href="/documents/new">Skapa Document manuellt</a></p>
-    <h2>Registrerade documents</h2>
-    <form id="documents-filter" method="get" action="/documents">
-      <label for="document-filter-q">Sök</label>
-      <input id="document-filter-q" name="q" type="search" value="{escape(query)}">
-      <label for="document-sort">Sortering</label>
-      <select id="document-sort" name="sort">
-        <option value="latest"{" selected" if selected_sort == "latest" else ""}>Senast tillagd</option>
-        <option value="title"{" selected" if selected_sort == "title" else ""}>Titel</option>
-        <option value="year"{" selected" if selected_sort == "year" else ""}>Utgivningsår</option>
-      </select>
-      <label for="document-ai-status">AI-status</label>
-      <select id="document-ai-status" name="ai_status">
-        <option value=""{" selected" if selected_ai_status == "" else ""}>Alla</option>
-        <option value="analyzed"{" selected" if selected_ai_status == "analyzed" else ""}>AI-analyserade</option>
-        <option value="not_analyzed"{" selected" if selected_ai_status == "not_analyzed" else ""}>Ej AI-analyserade</option>
-      </select>
-      <label for="document-project">Project</label>
-      <select id="document-project" name="project_id">
-        <option value=""{" selected" if selected_project_id == "" else ""}>Alla</option>
-        {project_options}
-      </select>
-      <button type="submit">Filtrera</button>
-    </form>
+    <div class="documents-heading">
+      <h2>Registrerade documents</h2>
+      <p class="metadata-provenance">{len(items)} av {total_count}</p>
+    </div>
     <ul class="document-list">
       {rendered_documents}
     </ul>
-    <p><a href="/capture">Capture utan dokument</a></p>
+""",
+            context=f"""
+    <h2 class="context-title">Documents</h2>
+    <form class="filter-form" id="documents-filter" method="get" action="/documents">
+      <div class="filter-field">
+        <label for="document-filter-q">Sök</label>
+        <input id="document-filter-q" name="q" type="search" value="{escape(query)}">
+      </div>
+      <div class="filter-field">
+        <label for="document-sort">Sortering</label>
+        <select id="document-sort" name="sort">
+          <option value="latest"{" selected" if selected_sort == "latest" else ""}>Senast tillagd</option>
+          <option value="title"{" selected" if selected_sort == "title" else ""}>Titel</option>
+          <option value="year"{" selected" if selected_sort == "year" else ""}>Utgivningsår</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="document-project">Project</label>
+        <select id="document-project" name="project_id">
+          <option value=""{" selected" if selected_project_id == "" else ""}>Alla</option>
+          {project_options}
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="document-ai-status">AI-status</label>
+        <select id="document-ai-status" name="ai_status">
+          <option value=""{" selected" if selected_ai_status == "" else ""}>Alla</option>
+          <option value="analyzed"{" selected" if selected_ai_status == "analyzed" else ""}>AI-analyserade</option>
+          <option value="not_analyzed"{" selected" if selected_ai_status == "not_analyzed" else ""}>Ej AI-analyserade</option>
+        </select>
+      </div>
+      <button type="submit">Filtrera</button>
+    </form>
+    <div class="context-group context-actions">
+      <a href="/documents">Nollställ filter</a>
+      <a href="/documents/new">Skapa Document manuellt</a>
+      <a href="/capture">Capture utan dokument</a>
+    </div>
 """,
         )
 
     def render_new_document(self) -> str:
         return self._page(
             title="Skapa Document manuellt",
+            active_nav="documents",
             body="""
     <p><a href="/documents">Documents</a></p>
     <h1>Skapa Document manuellt</h1>
@@ -481,19 +505,28 @@ class CaptureApp:
             metadata.append(escape(document.year))
         if document.author:
             metadata.append(escape(document.author))
-        metadata.append("AI-analyserad" if item.ai_analyzed else "Ej AI-analyserad")
         metadata.append(self._format_capture_count(item.capture_count))
         project_labels = [
             escape(project_names[project_id])
             for project_id in document.project_ids
             if project_id in project_names
         ]
-        if project_labels:
-            metadata.append("Project: " + ", ".join(project_labels))
+        metadata_text = " | ".join(metadata)
+        ai_status = "AI-analyserad" if item.ai_analyzed else "Ej AI-analyserad"
+        status_class = " is-complete" if item.ai_analyzed else ""
+        projects = (
+            f'<p class="document-list__projects">{" | ".join(project_labels)}</p>'
+            if project_labels
+            else ""
+        )
         return (
-            "<li>"
-            f'<a href="/documents/{escape(document.id)}">{escape(document.title)}</a>'
-            f"<br><span>{' | '.join(metadata)}</span>"
+            '<li class="document-list__item">'
+            "<div>"
+            f'<a class="document-list__title" href="/documents/{escape(document.id)}">{escape(document.title)}</a>'
+            f'<p class="document-list__metadata">{metadata_text}</p>'
+            "</div>"
+            f'<p class="document-list__status"><span class="status-mark{status_class}" aria-hidden="true"></span>{ai_status}</p>'
+            f"{projects}"
             "</li>"
         )
 
@@ -526,6 +559,7 @@ class CaptureApp:
         )
         return self._page(
             title=document.title,
+            active_nav="documents",
             body=f"""
     <p><a href="/documents">Documents</a></p>
     <h1>{escape(document.title)}</h1>
@@ -575,6 +609,7 @@ class CaptureApp:
 
         return self._page(
             title="AI-analys",
+            active_nav="documents",
             body=f"""
     <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
     <h1>AI-analys</h1>
@@ -607,6 +642,7 @@ class CaptureApp:
     def render_ai_message(self, document: Document, message: str) -> str:
         return self._page(
             title="AI-analys",
+            active_nav="documents",
             body=f"""
     <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
     <h1>AI-analys</h1>
@@ -626,6 +662,7 @@ class CaptureApp:
 
         return self._page(
             title="Projects",
+            active_nav="projects",
             body=f"""
     <h1>Projects</h1>
     <form method="post" action="/projects">
@@ -662,6 +699,7 @@ class CaptureApp:
 
         return self._page(
             title=project.name,
+            active_nav="projects",
             body=f"""
     <p><a href="/projects">Projects</a></p>
     <h1>{escape(project.name)}</h1>
@@ -946,6 +984,7 @@ class CaptureApp:
         note = self.archive.get_knowledge_object(object_id)
         return self._page(
             title="Redigera capture",
+            active_nav="capture",
             body=f"""
     <h1>Redigera capture</h1>
     <form method="post" action="/knowledge/{escape(note.id)}">
@@ -1010,6 +1049,29 @@ class CaptureApp:
     </form>
 """
 
+    def _render_document_context(
+        self,
+        document: Document,
+        original_file: str,
+        rendered_projects: str,
+    ) -> str:
+        return f"""
+    <h2 class="context-title">Document</h2>
+    <div class="context-group document-context__meta">
+      <dl>
+        <dt>Upphov</dt>
+        <dd>{escape(document.author or "Okänt")}</dd>
+        <dt>Utgivningsår</dt>
+        <dd>{escape(document.year or "Okänt")}</dd>
+        <dt>Originalfil</dt>
+        <dd>{original_file}</dd>
+        <dt>Projects</dt>
+        <dd>{rendered_projects}</dd>
+      </dl>
+    </div>
+    {self._render_document_metadata_form(document)}
+"""
+
     def _render_document_metadata_form(self, document: Document) -> str:
         sources = document.metadata_sources or {}
         metadata_source = ", ".join(
@@ -1018,9 +1080,9 @@ class CaptureApp:
         if not metadata_source:
             metadata_source = "Ingen sparad källinformation."
         return f"""
-    <section aria-labelledby="document-metadata-edit">
-      <h2 id="document-metadata-edit">Metadata</h2>
-      <p>Källor: {escape(metadata_source)}</p>
+    <details class="metadata-editor">
+      <summary>Redigera metadata</summary>
+      <p class="metadata-provenance">Källor: {escape(metadata_source)}</p>
       <form method="post" action="/documents/{escape(document.id)}/metadata">
         <label for="document-title">Titel</label>
         <input id="document-title" name="title" type="text" value="{escape(document.title)}" required>
@@ -1030,7 +1092,7 @@ class CaptureApp:
         <input id="document-year" name="year" type="text" inputmode="numeric" pattern="\\d{{4}}" value="{escape(document.year)}">
         <button type="submit">Spara metadata</button>
       </form>
-    </section>
+    </details>
 """
 
     def _render_project_link_form(self, project: Project, notes: list[object]) -> str:
@@ -1718,20 +1780,10 @@ class CaptureApp:
         )
         return self._page(
             title=document.title,
+            active_nav="documents",
             body=f"""
     <p><a href="/documents">Documents</a></p>
     <h1>{escape(document.title)}</h1>
-    <dl>
-      <dt>Upphov</dt>
-      <dd>{escape(document.author or "Okänt")}</dd>
-      <dt>Utgivningsår</dt>
-      <dd>{escape(document.year or "Okänt")}</dd>
-      <dt>Originalfil</dt>
-      <dd>{original_file}</dd>
-      <dt>Projects</dt>
-      <dd>{rendered_projects}</dd>
-    </dl>
-    {self._render_document_metadata_form(document)}
     {self._render_document_content_sections(notes)}
     {self._render_document_ai_panel(document, candidates, runs)}
     <section aria-labelledby="document-capture">
@@ -1739,6 +1791,11 @@ class CaptureApp:
       {self._render_capture_form(document=document, show_context=False)}
     </section>
 """,
+            context=self._render_document_context(
+                document=document,
+                original_file=original_file,
+                rendered_projects=rendered_projects,
+            ),
         )
 
     def render_review_history(self, document_id: str) -> str:
@@ -1748,6 +1805,7 @@ class CaptureApp:
         )
         return self._page(
             title="Tidigare AI-review",
+            active_nav="documents",
             body=f"""
     <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
     <h1>Tidigare AI-review</h1>
@@ -1867,7 +1925,712 @@ class CaptureApp:
         if self.log:
             self.log(message)
 
-    def _page(self, title: str, body: str) -> str:
+    def _nav_link(self, key: str, href: str, label: str, mark: str, active_nav: str) -> str:
+        active_class = " is-active" if active_nav == key else ""
+        current = ' aria-current="page"' if active_nav == key else ""
+        return (
+            f'<a class="global-nav__link{active_class}" href="{href}"{current}>'
+            f'<span class="global-nav__mark" aria-hidden="true">{mark}</span>'
+            f"<span>{label}</span>"
+            "</a>"
+        )
+
+    def _design_css(self) -> str:
+        return """
+    @font-face {
+      font-family: "Monomakh";
+      src: url("/static/fonts/Monomakh-Regular.ttf") format("truetype");
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+
+    :root {
+      --color-ivory: #f7f1e4;
+      --color-ivory-deep: #eee5d6;
+      --color-surface-subtle: #fbf7ef;
+      --color-ebony: #15130f;
+      --color-ebony-soft: #403b34;
+      --color-muted: #716a60;
+      --color-border: rgba(21, 19, 15, 0.26);
+      --color-border-strong: rgba(21, 19, 15, 0.72);
+      --color-cinnabar: #9f1d10;
+      --color-focus: #15130f;
+      --font-system: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --font-reading: Georgia, "Times New Roman", serif;
+      --font-inscription: "Courier New", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --font-devis: "Monomakh", var(--font-inscription);
+      --step--1: 0.82rem;
+      --step-0: 1rem;
+      --step-1: 1.18rem;
+      --step-2: 1.55rem;
+      --step-3: 2rem;
+      --space-1: 0.25rem;
+      --space-2: 0.5rem;
+      --space-3: 0.75rem;
+      --space-4: 1rem;
+      --space-5: 1.5rem;
+      --space-6: 2rem;
+      --space-7: 3rem;
+      --line-thin: 1px solid var(--color-border);
+      --line-strong: 1px solid var(--color-border-strong);
+      --measure-reading: 72ch;
+      --shell-context: minmax(13rem, 18rem);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      min-width: 0;
+      background: var(--color-ivory);
+    }
+
+    body {
+      color: var(--color-ebony);
+      background: var(--color-ivory);
+      font-family: var(--font-system);
+      font-size: 16px;
+      line-height: 1.5;
+      margin: 0;
+      min-width: 0;
+      text-rendering: optimizeLegibility;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      border: 3px solid var(--color-ebony);
+      z-index: 10;
+    }
+
+    a {
+      color: inherit;
+      text-decoration-color: var(--color-cinnabar);
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.2em;
+    }
+
+    a:hover {
+      color: var(--color-cinnabar);
+    }
+
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--color-focus);
+      outline-offset: 3px;
+    }
+
+    .app-shell {
+      min-height: 100vh;
+      padding: 3px;
+    }
+
+    .identity-bar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: var(--space-5);
+      align-items: center;
+      border-bottom: var(--line-strong);
+      padding: var(--space-4) clamp(var(--space-4), 2.5vw, var(--space-7));
+    }
+
+    .identity-lockup {
+      display: inline-grid;
+      grid-template-columns: auto minmax(0, auto);
+      gap: var(--space-4);
+      align-items: center;
+      min-width: 0;
+      text-decoration: none;
+    }
+
+    .identity-mark {
+      width: clamp(2.6rem, 5vw, 4.25rem);
+      height: clamp(2.6rem, 5vw, 4.25rem);
+      color: var(--color-cinnabar);
+      flex: 0 0 auto;
+    }
+
+    .identity-text {
+      min-width: 0;
+      border-left: var(--line-thin);
+      padding-left: var(--space-4);
+    }
+
+    .identity-title {
+      display: block;
+      font-family: var(--font-system);
+      font-size: clamp(1.35rem, 3vw, 2.15rem);
+      font-weight: 650;
+      letter-spacing: 0.12em;
+      line-height: 1.05;
+      overflow-wrap: anywhere;
+    }
+
+    .identity-subtitle,
+    .system-label,
+    label,
+    legend,
+    th,
+    dt {
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .identity-subtitle {
+      color: var(--color-cinnabar);
+      display: block;
+      font-family: var(--font-devis);
+      font-weight: 400;
+      letter-spacing: 0.01em;
+      line-height: 1.2;
+      margin-top: var(--space-2);
+      text-transform: none;
+    }
+
+    .identity-actions {
+      display: flex;
+      gap: var(--space-3);
+      justify-content: flex-end;
+    }
+
+    .identity-action {
+      align-items: center;
+      border: var(--line-strong);
+      color: var(--color-cinnabar);
+      display: inline-flex;
+      font-family: var(--font-inscription);
+      min-height: 2.75rem;
+      padding: 0 var(--space-4);
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+
+    .identity-action.is-active {
+      background: var(--color-cinnabar);
+      color: var(--color-ivory);
+    }
+
+    .global-nav {
+      border-bottom: var(--line-strong);
+      display: flex;
+      min-width: 0;
+      overflow-x: auto;
+      padding: 0 clamp(var(--space-4), 2.5vw, var(--space-7));
+    }
+
+    .global-nav__link {
+      align-items: center;
+      border-right: var(--line-thin);
+      display: inline-flex;
+      flex: 0 0 auto;
+      gap: var(--space-3);
+      min-height: 3.15rem;
+      padding: 0 var(--space-5);
+      position: relative;
+      text-decoration: none;
+      text-transform: uppercase;
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+    }
+
+    .global-nav__link:first-child {
+      border-left: var(--line-thin);
+    }
+
+    .global-nav__link.is-active {
+      color: var(--color-cinnabar);
+      font-weight: 700;
+    }
+
+    .global-nav__link.is-active::after {
+      content: "";
+      position: absolute;
+      left: var(--space-4);
+      right: var(--space-4);
+      bottom: -1px;
+      border-bottom: 2px solid var(--color-cinnabar);
+    }
+
+    .global-nav__mark {
+      color: currentColor;
+      font-size: 1.2em;
+      line-height: 1;
+    }
+
+    .page-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      margin: 0 auto;
+      max-width: 88rem;
+      min-width: 0;
+    }
+
+    .page-workspace.has-context {
+      grid-template-columns: var(--shell-context) minmax(0, 1fr);
+    }
+
+    .page-context {
+      border-right: var(--line-strong);
+      padding: var(--space-5);
+    }
+
+    .page-context > :first-child,
+    main > :first-child {
+      margin-top: 0;
+    }
+
+    .context-title {
+      border-top: 0;
+      color: var(--color-cinnabar);
+      margin-bottom: var(--space-5);
+      padding-top: 0;
+    }
+
+    .context-group {
+      border-top: var(--line-thin);
+      margin-bottom: var(--space-5);
+      padding-top: var(--space-4);
+    }
+
+    .context-group > :last-child {
+      margin-bottom: 0;
+    }
+
+    .context-actions {
+      display: grid;
+      gap: var(--space-3);
+    }
+
+    main {
+      min-width: 0;
+      padding: clamp(var(--space-4), 3vw, var(--space-7));
+    }
+
+    main > * {
+      max-width: var(--measure-reading);
+    }
+
+    main > h1:first-child,
+    main > p:first-child + h1 {
+      margin-top: 0;
+    }
+
+    h1,
+    h2,
+    h3 {
+      color: var(--color-ebony);
+      line-height: 1.16;
+      margin: var(--space-6) 0 var(--space-3);
+      overflow-wrap: anywhere;
+    }
+
+    h1 {
+      font-size: var(--step-2);
+      font-weight: 580;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      border-top: var(--line-thin);
+      font-family: var(--font-inscription);
+      font-size: var(--step-1);
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      padding-top: var(--space-4);
+      text-transform: uppercase;
+    }
+
+    h3 {
+      font-size: var(--step-1);
+      font-weight: 650;
+    }
+
+    p,
+    li,
+    dd {
+      overflow-wrap: anywhere;
+    }
+
+    p {
+      margin: 0 0 var(--space-4);
+    }
+
+    section,
+    article,
+    form,
+    dl,
+    table,
+    ul {
+      margin-bottom: var(--space-5);
+    }
+
+    article {
+      border-top: var(--line-thin);
+      padding: var(--space-4) 0;
+    }
+
+    ul {
+      list-style: none;
+      padding-left: 0;
+    }
+
+    li {
+      border-top: var(--line-thin);
+      padding: var(--space-3) 0;
+    }
+
+    dl {
+      display: grid;
+      gap: var(--space-2) var(--space-4);
+      grid-template-columns: max-content minmax(0, 1fr);
+    }
+
+    dt {
+      color: var(--color-cinnabar);
+    }
+
+    dd {
+      margin: 0;
+    }
+
+    form {
+      border-top: var(--line-thin);
+      padding-top: var(--space-4);
+    }
+
+    .filter-form,
+    .metadata-editor form {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .filter-field {
+      margin-bottom: var(--space-4);
+    }
+
+    label,
+    legend {
+      color: var(--color-ebony-soft);
+      display: block;
+      margin-bottom: var(--space-2);
+    }
+
+    fieldset {
+      border: var(--line-thin);
+      margin: 0 0 var(--space-4);
+      padding: var(--space-4);
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      font: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+      background: var(--color-surface-subtle);
+      border: var(--line-strong);
+      color: var(--color-ebony);
+      display: block;
+      margin-bottom: var(--space-4);
+      min-height: 2.75rem;
+      padding: 0.62rem 0.7rem;
+      width: 100%;
+    }
+
+    textarea {
+      font-family: var(--font-reading);
+      min-height: 10rem;
+      resize: vertical;
+    }
+
+    input[type="checkbox"] {
+      accent-color: var(--color-cinnabar);
+      display: inline-block;
+      min-height: auto;
+      margin: 0 var(--space-2) 0 0;
+      width: auto;
+    }
+
+    button {
+      background: transparent;
+      border: var(--line-strong);
+      color: var(--color-ebony);
+      cursor: pointer;
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+      min-height: 2.75rem;
+      margin: var(--space-2) var(--space-2) var(--space-2) 0;
+      padding: 0.55rem 0.85rem;
+      text-transform: uppercase;
+    }
+
+    button:hover {
+      border-color: var(--color-cinnabar);
+      color: var(--color-cinnabar);
+    }
+
+    button[type="submit"]:first-of-type,
+    button[name="confirm_ai"],
+    button[value="yes"] {
+      border-color: var(--color-cinnabar);
+      color: var(--color-cinnabar);
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+
+    th,
+    td {
+      border-top: var(--line-thin);
+      padding: var(--space-3);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .documents-heading {
+      align-items: baseline;
+      display: flex;
+      gap: var(--space-4);
+      justify-content: space-between;
+      max-width: none;
+    }
+
+    .document-list {
+      max-width: none;
+    }
+
+    .document-list__item {
+      display: grid;
+      gap: var(--space-2);
+      grid-template-columns: minmax(0, 1fr) auto;
+      padding: var(--space-4) 0;
+    }
+
+    .document-list__title {
+      font-size: var(--step-1);
+      font-weight: 650;
+      line-height: 1.25;
+    }
+
+    .document-list__metadata,
+    .document-list__projects {
+      color: var(--color-muted);
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+    }
+
+    .document-list__projects {
+      grid-column: 1 / -1;
+    }
+
+    .document-list__status {
+      align-items: center;
+      display: inline-flex;
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+      gap: var(--space-2);
+      justify-self: end;
+      white-space: nowrap;
+    }
+
+    .status-mark {
+      border: 1px solid currentColor;
+      border-radius: 50%;
+      display: inline-block;
+      height: 0.65rem;
+      width: 0.65rem;
+    }
+
+    .status-mark.is-complete {
+      background: var(--color-cinnabar);
+      border-color: var(--color-cinnabar);
+      color: var(--color-cinnabar);
+    }
+
+    .document-context__meta,
+    .document-context__meta dl {
+      margin-bottom: var(--space-4);
+    }
+
+    .metadata-provenance {
+      color: var(--color-muted);
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+    }
+
+    .metadata-editor {
+      border-top: var(--line-thin);
+      margin-top: var(--space-5);
+      padding-top: var(--space-4);
+    }
+
+    .metadata-editor summary {
+      cursor: pointer;
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+      text-transform: uppercase;
+    }
+
+    .knowledge-section ul {
+      margin-top: var(--space-3);
+    }
+
+    .knowledge-section li p:first-child {
+      font-family: var(--font-reading);
+      font-size: var(--step-1);
+      line-height: 1.55;
+    }
+
+    small,
+    .document-list__metadata,
+    .document-list__projects {
+      color: var(--color-muted);
+    }
+
+    @media (max-width: 54rem) {
+      body::before {
+        border-width: 2px;
+      }
+
+      .identity-bar {
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+      }
+
+      .identity-actions {
+        justify-content: flex-start;
+      }
+
+      .identity-title {
+        font-size: 1.35rem;
+      }
+
+      .global-nav {
+        padding: 0;
+      }
+
+      .global-nav__link {
+        flex: 1 0 auto;
+        justify-content: center;
+        min-width: 7rem;
+        padding: 0 var(--space-3);
+      }
+
+      .page-workspace.has-context {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .page-context {
+        border-right: 0;
+        border-bottom: var(--line-strong);
+      }
+
+      main {
+        padding-bottom: var(--space-7);
+      }
+
+      h1 {
+        font-size: 1.35rem;
+      }
+
+      dl {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .document-list__item {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      .document-list__status {
+        justify-self: start;
+      }
+    }
+
+    @media (max-width: 28rem) {
+      .identity-lockup {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: var(--space-3);
+      }
+
+      .identity-subtitle {
+        display: none;
+      }
+
+      .identity-action {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .global-nav__link {
+        min-width: 6.2rem;
+        flex-direction: column;
+        gap: var(--space-1);
+        min-height: 3.9rem;
+      }
+
+      main {
+        padding-left: var(--space-4);
+        padding-right: var(--space-4);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+      }
+    }
+"""
+
+    def _identity_mark(self) -> str:
+        return """
+          <svg class="identity-mark" viewBox="0 0 64 64" focusable="false" aria-hidden="true">
+            <circle cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M32 5 L58 58 H6 Z" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M32 5 V58 M12 58 H52" fill="none" stroke="currentColor" stroke-width="1.5"/>
+            <circle cx="32" cy="32" r="7" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+"""
+
+    def _page(
+        self,
+        title: str,
+        body: str,
+        active_nav: str = "",
+        context: str = "",
+    ) -> str:
+        context_region = (
+            f'<aside class="page-context" aria-label="Kontext">{context}</aside>'
+            if context
+            else ""
+        )
+        workspace_class = "page-workspace has-context" if context else "page-workspace"
+        capture_active = " is-active" if active_nav == "capture" else ""
+        capture_current = ' aria-current="page"' if active_nav == "capture" else ""
+        primary_nav = "\n      ".join(
+            (
+                self._nav_link("inbox", "/inbox", "Inbox", "◇", active_nav),
+                self._nav_link("documents", "/documents", "Documents", "□", active_nav),
+                self._nav_link("projects", "/projects", "Projects", "△", active_nav),
+            )
+        )
         return f"""<!doctype html>
 <html lang="sv">
 <head>
@@ -1875,61 +2638,33 @@ class CaptureApp:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{escape(title)}</title>
   <style>
-    body {{
-      color: #111;
-      background: #fff;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.5;
-      margin: 0;
-    }}
-    main {{
-      max-width: 48rem;
-      margin: 0 auto;
-      padding: 1rem;
-    }}
-    textarea {{
-      box-sizing: border-box;
-      width: 100%;
-      min-height: 10rem;
-      font: inherit;
-      padding: 0.75rem;
-      border: 1px solid #555;
-    }}
-    input, select {{
-      box-sizing: border-box;
-      width: 100%;
-      font: inherit;
-      padding: 0.55rem;
-      border: 1px solid #555;
-      margin-bottom: 0.75rem;
-    }}
-    input[type="checkbox"] {{
-      width: auto;
-      margin-right: 0.35rem;
-    }}
-    button {{
-      font: inherit;
-      margin-top: 0.75rem;
-      padding: 0.55rem 0.85rem;
-      border: 1px solid #111;
-      background: #f7f7f7;
-      color: #111;
-    }}
-    ul {{
-      padding-left: 1.25rem;
-    }}
+{self._design_css()}
   </style>
 </head>
 <body>
-  <nav aria-label="Huvudnavigation">
-    <a href="/inbox">Inbox</a>
-    <a href="/capture">Capture</a>
-    <a href="/documents">Documents</a>
-    <a href="/projects">Projects</a>
-  </nav>
-  <main>
+  <div class="app-shell">
+    <header class="identity-bar">
+      <a class="identity-lockup" href="/inbox" aria-label="Dokumentverkstad Inbox">
+{self._identity_mark()}
+        <span class="identity-text">
+          <span class="identity-title">DOKUMENTVERKSTAD</span>
+          <span class="identity-subtitle">личный архивъ знаний ✚</span>
+        </span>
+      </a>
+      <div class="identity-actions" aria-label="Primära handlingar">
+        <a class="identity-action{capture_active}" href="/capture"{capture_current}>+ Capture</a>
+      </div>
+    </header>
+    <nav class="global-nav" aria-label="Huvudnavigation">
+      {primary_nav}
+    </nav>
+    <div class="{workspace_class}">
+      {context_region}
+      <main>
 {body}
-  </main>
+      </main>
+    </div>
+  </div>
   <script>
     const captureField = document.getElementById("content");
     if (captureField) {{
@@ -1998,6 +2733,12 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 return
             if parsed.path == "/admin":
                 self._send_html(app.render_admin())
+                return
+            if parsed.path == "/static/fonts/Monomakh-Regular.ttf":
+                self._send_static_asset(
+                    Path(__file__).with_name("static") / "fonts" / "Monomakh-Regular.ttf",
+                    "font/ttf",
+                )
                 return
             if parsed.path.startswith("/documents/"):
                 document_path = unquote(parsed.path.removeprefix("/documents/"))
@@ -2273,6 +3014,18 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/pdf")
             self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
+        def _send_static_asset(self, path: Path, content_type: str) -> None:
+            if not path.is_file():
+                self.send_error(HTTPStatus.NOT_FOUND)
+                return
+            content = path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
             self.end_headers()
             self.wfile.write(content)
 
