@@ -104,6 +104,7 @@ class CaptureApp:
         return self._page(
             title="Capture",
             active_nav="capture",
+            context=self._render_capture_context(document=document, project=project),
             body=f"""
     <h1>Capture</h1>
     {self._render_capture_form(document=document, project=project)}
@@ -119,33 +120,59 @@ class CaptureApp:
     def render_inbox(self) -> str:
         documents = self.archive.list_inbox_documents()
         candidates = self._visible_ai_candidates_for_inbox()
+        queue_count = len(documents) + len(candidates)
         rendered_documents = "\n".join(
             self._render_inbox_document(document) for document in documents
         )
         rendered_candidates = self._render_ai_inbox_candidates(candidates)
-        empty_notice = "<p>Inbox är tom.</p>" if not documents and not candidates else ""
+        empty_notice = (
+            '<p class="empty-state">Inget väntar på behandling.</p>'
+            if not documents and not candidates
+            else ""
+        )
         if not rendered_documents:
-            rendered_documents = "<p>Inga väntande documents.</p>"
+            rendered_documents = (
+                '<p class="empty-state">Inga documents väntar på beslut.</p>'
+            )
         if not rendered_candidates:
-            rendered_candidates = "<p>Inga documents har väntande AI-review.</p>"
+            rendered_candidates = (
+                '<p class="empty-state">Inga AI-förslag väntar på review.</p>'
+            )
+        context = f"""
+    <h2 class="context-title">Inbox</h2>
+    <div class="context-group">
+      <p class="system-label">Väntande</p>
+      <p class="queue-count">{queue_count} objekt</p>
+    </div>
+    <div class="context-group">
+      <p class="system-label">Snabblänkar</p>
+      <nav class="context-actions" aria-label="Inbox-länkar">
+        <a href="/upload">Lägg till PDF</a>
+        <a href="/trash">Trash</a>
+        <a href="/admin">Administration</a>
+      </nav>
+    </div>
+"""
 
         return self._page(
             title="Inbox",
             active_nav="inbox",
+            context=context,
             body=f"""
     <h1>Inbox</h1>
-    {empty_notice}
+    <section class="queue-summary" aria-labelledby="inbox-queue">
+      <h2 id="inbox-queue">Väntande</h2>
+      <p><span class="queue-summary__number">{queue_count}</span> objekt behöver beslut eller review.</p>
+      {empty_notice}
+    </section>
     <section aria-labelledby="inbox-documents">
-      <h2 id="inbox-documents">Väntande documents</h2>
+      <h2 id="inbox-documents">Documents som väntar</h2>
       {rendered_documents}
     </section>
     <section aria-labelledby="inbox-candidates">
       <h2 id="inbox-candidates">AI-review</h2>
       {rendered_candidates}
     </section>
-    <p><a href="/trash">Trash</a></p>
-    <p><a href="/upload">Lägg till PDF</a></p>
-    <p><a href="/admin">Administration</a></p>
 """,
         )
 
@@ -653,30 +680,45 @@ class CaptureApp:
     def render_projects(self) -> str:
         projects = self.archive.list_projects()
         rendered_projects = "\n".join(
-            f"<li><a href=\"/projects/{escape(project.id)}\">"
-            f"{escape(project.name)}</a></li>"
-            for project in projects
+            self._render_project_list_item(project) for project in projects
         )
         if not rendered_projects:
-            rendered_projects = "<li>Inga projekt ännu.</li>"
+            rendered_projects = (
+                '<li><p class="empty-state">Inga projects ännu.</p></li>'
+            )
+        context = f"""
+    <h2 class="context-title">Projects</h2>
+    <div class="context-group">
+      <p class="system-label">Sammanhang</p>
+      <p>{len(projects)} project</p>
+    </div>
+    <details class="metadata-editor">
+      <summary>Skapa Project</summary>
+      <form method="post" action="/projects">
+        <label for="name">Namn</label>
+        <input id="name" name="name" type="text" required>
+        <label for="description">Beskrivning</label>
+        <input id="description" name="description" type="text">
+        <button type="submit">Skapa Project</button>
+      </form>
+    </details>
+    <div class="context-group">
+      <p><a href="/capture">Capture utan Project</a></p>
+    </div>
+"""
 
         return self._page(
             title="Projects",
             active_nav="projects",
+            context=context,
             body=f"""
     <h1>Projects</h1>
-    <form method="post" action="/projects">
-      <label for="name">Namn</label>
-      <input id="name" name="name" type="text" required>
-      <label for="description">Beskrivning</label>
-      <input id="description" name="description" type="text">
-      <button type="submit">Skapa project</button>
-    </form>
-    <h2>Registrerade projects</h2>
-    <ul>
+    <section aria-labelledby="registered-projects">
+      <h2 id="registered-projects">Befintliga sammanhang</h2>
+      <ul class="project-list">
       {rendered_projects}
-    </ul>
-    <p><a href="/capture">Capture utan projekt</a></p>
+      </ul>
+    </section>
 """,
         )
 
@@ -690,47 +732,115 @@ class CaptureApp:
             if project.id not in note.project_ids and note.review_status == "accepted"
         ]
         rendered_documents = "\n".join(
-            f"<li><a href=\"/documents/{escape(document.id)}\">"
-            f"{escape(document.title)}</a></li>"
-            for document in documents
+            self._render_project_document_item(document) for document in documents
         )
         if not rendered_documents:
-            rendered_documents = "<li>Inga relevanta documents ännu.</li>"
+            rendered_documents = (
+                '<li><p class="empty-state">Inga documents i detta sammanhang ännu.</p></li>'
+            )
+        rendered_notes = self._render_notes(
+            notes, "Inga captures i detta sammanhang ännu."
+        )
+        context = f"""
+    <h2 class="context-title">Project</h2>
+    <div class="context-group">
+      <p class="system-label">Namn</p>
+      <p>{escape(project.name)}</p>
+    </div>
+    <div class="context-group">
+      <p class="system-label">Beskrivning</p>
+      <p>{escape(project.description or "Ingen beskrivning ännu.")}</p>
+    </div>
+    <div class="context-group">
+      <p class="system-label">Innehåll</p>
+      <dl>
+        <dt>Documents</dt>
+        <dd>{len(documents)}</dd>
+        <dt>Captures</dt>
+        <dd>{len(notes)}</dd>
+      </dl>
+    </div>
+    <details class="metadata-editor">
+      <summary>Redigera Project</summary>
+      <form method="post" action="/projects/{escape(project.id)}">
+        <label for="name">Namn</label>
+        <input id="name" name="name" type="text" value="{escape(project.name)}" required>
+        <label for="description">Beskrivning</label>
+        <input id="description" name="description" type="text" value="{escape(project.description)}">
+        <button type="submit">Spara Project</button>
+      </form>
+    </details>
+    <div class="context-group">
+      <p><a href="/projects">Alla Projects</a></p>
+      <p><a href="/capture?project_id={escape(project.id)}">Capture i Project</a></p>
+    </div>
+"""
 
         return self._page(
             title=project.name,
             active_nav="projects",
+            context=context,
             body=f"""
-    <p><a href="/projects">Projects</a></p>
     <h1>{escape(project.name)}</h1>
-    <p>{escape(project.description)}</p>
-    <form method="post" action="/projects/{escape(project.id)}">
-      <label for="name">Namn</label>
-      <input id="name" name="name" type="text" value="{escape(project.name)}" required>
-      <label for="description">Beskrivning</label>
-      <input id="description" name="description" type="text" value="{escape(project.description)}">
-      <button type="submit">Spara project</button>
-    </form>
-    <section aria-labelledby="project-capture">
-      <h2 id="project-capture">Capture</h2>
-      {self._render_capture_form(project=project)}
-    </section>
     <section aria-labelledby="project-notes">
-      <h2 id="project-notes">Kopplade noteringar</h2>
+      <h2 id="project-notes">Captures och knowledge objects</h2>
       <ul>
-        {self._render_notes(notes, "Inga kopplade noteringar ännu.")}
+        {rendered_notes}
       </ul>
     </section>
     <section aria-labelledby="project-documents">
-      <h2 id="project-documents">Relevanta documents</h2>
-      <ul>
+      <h2 id="project-documents">Documents</h2>
+      <ul class="project-document-list">
         {rendered_documents}
       </ul>
     </section>
-    {self._render_project_link_form(project, unlinked_notes)}
-    {self._render_relation_form(notes)}
+    <section aria-labelledby="project-capture">
+      <h2 id="project-capture">Ny Capture</h2>
+      {self._render_capture_form(project=project)}
+    </section>
+    <details class="metadata-editor">
+      <summary>Organisera befintligt material</summary>
+      {self._render_project_link_form(project, unlinked_notes)}
+      {self._render_relation_form(notes)}
+    </details>
 """,
         )
+
+    def _render_project_list_item(self, project: Project) -> str:
+        documents = self.archive.list_documents_for_project(project.id)
+        notes = self.archive.list_knowledge_objects_for_project(project.id)
+        description = (
+            f"<p class=\"metadata-provenance\">{escape(project.description)}</p>"
+            if project.description
+            else '<p class="metadata-provenance">Ingen beskrivning ännu.</p>'
+        )
+        return f"""
+        <li class="project-list__item">
+          <a class="project-list__title" href="/projects/{escape(project.id)}">{escape(project.name)}</a>
+          {description}
+          <p class="project-list__metadata">{len(documents)} documents | {len(notes)} captures</p>
+        </li>
+"""
+
+    def _render_project_document_item(self, document: Document) -> str:
+        metadata = " | ".join(
+            value
+            for value in (document.year, document.author)
+            if value
+        )
+        rendered_metadata = (
+            f"<p class=\"document-list__metadata\">{escape(metadata)}</p>"
+            if metadata
+            else ""
+        )
+        return f"""
+        <li class="document-list__item">
+          <div>
+            <a class="document-list__title" href="/documents/{escape(document.id)}">{escape(document.title)}</a>
+            {rendered_metadata}
+          </div>
+        </li>
+"""
 
     def create_document_from_form(self, body: bytes) -> Document:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -982,16 +1092,21 @@ class CaptureApp:
 
     def render_note_edit(self, object_id: str) -> str:
         note = self.archive.get_knowledge_object(object_id)
+        context = self._render_note_edit_context(note)
         return self._page(
             title="Redigera capture",
             active_nav="capture",
+            context=context,
             body=f"""
     <h1>Redigera capture</h1>
-    <form method="post" action="/knowledge/{escape(note.id)}">
-      <label for="content">Innehåll</label>
+    <form class="capture-form" method="post" action="/knowledge/{escape(note.id)}">
+      <label for="content">Capture</label>
       <textarea id="content" name="content" required>{escape(note.content)}</textarea>
-      <label for="source_location">Källposition</label>
-      <input id="source_location" name="source_location" type="text" value="{escape(note.source_location)}">
+      <details>
+        <summary>Källposition</summary>
+        <label for="source_location">Källposition</label>
+        <input id="source_location" name="source_location" type="text" value="{escape(note.source_location)}">
+      </details>
       <button type="submit">Spara</button>
     </form>
 """,
@@ -1015,38 +1130,113 @@ class CaptureApp:
             )
             if show_context:
                 context = (
-                    "<p>Aktuellt dokument: "
+                    '<p class="capture-context"><span class="system-label">Till Document</span> '
                     f"<a href=\"/documents/{escape(document.id)}\">"
                     f"{escape(document.title)}</a></p>"
                 )
             source_location = """
-      <label for="source_location">Källposition</label>
-      <input id="source_location" name="source_location" type="text" placeholder="s. 35 eller kapitel 4">
+      <details>
+        <summary>Källposition</summary>
+        <label for="source_location">Källposition</label>
+        <input id="source_location" name="source_location" type="text" placeholder="s. 35 eller kapitel 4">
+      </details>
 """
         if project:
             action = f"/capture?project_id={escape(project.id)}"
             if show_context:
                 context = (
-                    "<p>Aktuellt project: "
+                    '<p class="capture-context"><span class="system-label">Till Project</span> '
                     f"<a href=\"/projects/{escape(project.id)}\">"
                     f"{escape(project.name)}</a></p>"
                 )
             project_choice = (
+                '<details class="capture-organization" open>'
+                "<summary>Project-koppling</summary>"
                 "<label>"
                 f"<input name=\"project_id\" type=\"checkbox\" value=\"{escape(project.id)}\" checked>"
                 f"Koppla till {escape(project.name)}</label>"
+                "</details>"
             )
 
         return f"""
     {context}
-    <form method="post" action="{action}">
+    <form class="capture-form" method="post" action="{action}">
       {hidden_document}
-      <label for="content">Ny notering</label>
+      <label for="content">Capture</label>
       <textarea id="content" name="content" autofocus required></textarea>
       {source_location}
       {project_choice}
       <button type="submit">Spara</button>
     </form>
+"""
+
+    def _render_capture_context(
+        self, document: Document | None = None, project: Project | None = None
+    ) -> str:
+        target = "Fristående Capture"
+        detail = "Kan sparas utan Document eller Project."
+        if document:
+            target = "Document"
+            detail = (
+                f"<a href=\"/documents/{escape(document.id)}\">"
+                f"{escape(document.title)}</a>"
+            )
+        elif project:
+            target = "Project"
+            detail = (
+                f"<a href=\"/projects/{escape(project.id)}\">"
+                f"{escape(project.name)}</a>"
+            )
+        return f"""
+    <h2 class="context-title">Capture</h2>
+    <div class="context-group">
+      <p class="system-label">Till</p>
+      <p>{target}</p>
+      <p>{detail}</p>
+    </div>
+"""
+
+    def _render_note_edit_context(self, note: KnowledgeObject) -> str:
+        target = "Fristående Capture"
+        detail = "Ingen Document- eller Project-koppling."
+        if note.document_id:
+            try:
+                document = self.archive.get_document(note.document_id)
+                target = "Document"
+                detail = (
+                    f"<a href=\"/documents/{escape(document.id)}\">"
+                    f"{escape(document.title)}</a>"
+                )
+            except FileNotFoundError:
+                target = "Document"
+                detail = "Document saknas i Archive."
+        elif note.project_ids:
+            try:
+                project = self.archive.get_project(note.project_ids[0])
+                target = "Project"
+                detail = (
+                    f"<a href=\"/projects/{escape(project.id)}\">"
+                    f"{escape(project.name)}</a>"
+                )
+            except FileNotFoundError:
+                target = "Project"
+                detail = "Project saknas i Archive."
+        history_note = (
+            f"{len(note.history)} tidigare versioner"
+            if note.history
+            else "Ingen tidigare version"
+        )
+        return f"""
+    <h2 class="context-title">Capture</h2>
+    <div class="context-group">
+      <p class="system-label">Till</p>
+      <p>{target}</p>
+      <p>{detail}</p>
+    </div>
+    <div class="context-group">
+      <p class="system-label">Historik</p>
+      <p>{history_note}</p>
+    </div>
 """
 
     def _render_document_context(
@@ -1116,6 +1306,7 @@ class CaptureApp:
 """
 
     def _render_inbox_document(self, document: Document) -> str:
+        projects = self.archive.list_projects()
         project_options = "\n".join(
             (
                 "<label>"
@@ -1123,29 +1314,56 @@ class CaptureApp:
                 f"{' checked' if project.id in document.project_ids else ''}>"
                 f"{escape(project.name)}</label>"
             )
-            for project in self.archive.list_projects()
+            for project in projects
         )
         if not project_options:
             project_options = "<p>Inga projects finns ännu.</p>"
         original_filename = (
-            f"<p>Originalfil: {escape(document.original_filename)}</p>"
+            f"<dd>{escape(document.original_filename)}</dd>"
             if document.original_filename
-            else ""
+            else "<dd>Okänd</dd>"
+        )
+        author = escape(document.author or "Okänt")
+        year = escape(document.year or "Okänt")
+        status = self._format_inbox_status(document.inbox_status)
+        projects_open = " open" if len(projects) <= 4 else ""
+        project_hint = (
+            "Valfritt. Välj bara ett sammanhang om det redan är tydligt."
+            if projects
+            else "Valfritt. Det finns inga projects att välja ännu."
         )
 
         return f"""
-      <article>
-        <h3><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></h3>
-        {original_filename}
-        <p>Status: {escape(document.inbox_status)}</p>
+      <article class="inbox-item">
+        <div class="inbox-item__context">
+          <p class="system-label">Document i Inbox</p>
+          <h3><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></h3>
+          <dl class="compact-meta">
+            <dt>Originalfil</dt>
+            {original_filename}
+            <dt>Upphov</dt>
+            <dd>{author}</dd>
+            <dt>År</dt>
+            <dd>{year}</dd>
+            <dt>Köläge</dt>
+            <dd>{escape(status)}</dd>
+          </dl>
+        </div>
         <form method="post" action="/inbox/documents/{escape(document.id)}">
-          <fieldset>
-            <legend>Koppla till projects</legend>
-            {project_options}
-          </fieldset>
-          <button name="decision" type="submit" value="done">Klar</button>
-          <button name="decision" type="submit" value="later">Senare</button>
-          <button name="decision" type="submit" value="trashed">Kasta</button>
+          <p class="decision-prompt">Granska dokumentet, koppla eventuellt ett Project och välj nästa steg.</p>
+          <details class="optional-projects"{projects_open}>
+            <summary>Valfri Project-koppling</summary>
+            <fieldset>
+              <legend>Koppla till projects</legend>
+              <p class="metadata-provenance">{project_hint}</p>
+              {project_options}
+            </fieldset>
+          </details>
+          <div class="decision-actions">
+            <button name="decision" type="submit" value="done">Spara</button>
+            <button name="decision" type="submit" value="later">Senare</button>
+            <button name="decision" type="submit" value="trashed">Kasta</button>
+          </div>
         </form>
       </article>
 """
@@ -1155,7 +1373,7 @@ class CaptureApp:
         if not grouped:
             return ""
         summary = (
-            f"<p>{len(grouped)} document har obearbetade AI-granskningar.</p>"
+            f"<p>{len(grouped)} document har AI-förslag som väntar på review.</p>"
         )
         rendered_items = "\n".join(
             self._render_ai_inbox_document(document, pending_count)
@@ -1188,10 +1406,17 @@ class CaptureApp:
             else f"{pending_count} AI-kandidater väntar"
         )
         return f"""
-      <article data-ai-inbox-document-id="{escape(document.id)}">
-        <h3>{escape(document.title)}</h3>
-        <p>{candidate_text}</p>
-        <p><a href="{document_href}">Granska</a></p>
+      <article class="inbox-item inbox-item--ai" data-ai-inbox-document-id="{escape(document.id)}">
+        <div class="inbox-item__context">
+          <p class="system-label">AI-review</p>
+          <h3>{escape(document.title)}</h3>
+          <p class="metadata-provenance">{candidate_text}</p>
+        </div>
+        <div class="inbox-item__decision">
+          <p class="decision-prompt">AI har lämnat förslag som behöver redaktionellt beslut innan de blir del av arkivet.</p>
+          <p><a href="{document_href}#ai-review">Granska AI-förslag</a></p>
+          <p><a href="{document_href}">Öppna Document</a></p>
+        </div>
       </article>
 """
 
@@ -1214,13 +1439,37 @@ class CaptureApp:
                 continue
             rendered_groups.append(
                 f"""
-      <section aria-labelledby="ai-{escape(semantic_type)}">
+      <section class="ai-review-group" aria-labelledby="ai-{escape(semantic_type)}">
         <h3 id="ai-{escape(semantic_type)}">{escape(heading)}</h3>
         {"".join(self._render_ai_candidate(candidate) for candidate in items)}
       </section>
 """
             )
         return "\n".join(rendered_groups)
+
+    def _format_inbox_status(self, inbox_status: str) -> str:
+        return {
+            "new": "Väntar på beslut",
+            "later": "Markerad för senare",
+        }.get(inbox_status, inbox_status)
+
+    def _format_ai_type_label(self, semantic_type: str) -> str:
+        return {
+            "Summary": "Summary",
+            "Claim": "Claim",
+            "Insight": "Insight",
+            "Question": "Question",
+            "ProjectSuggestion": "Project-förslag",
+        }.get(semantic_type, semantic_type)
+
+    def _format_review_status(self, review_status: str) -> str:
+        return {
+            "accepted": "Accepterad",
+            "rejected": "Avvisad",
+            "later": "Senare",
+            "handled": "Hanterad",
+            "candidate": "Ogranskad",
+        }.get(review_status, review_status)
 
     def _visible_ai_candidates_for_inbox(self) -> list[KnowledgeObject]:
         return [
@@ -1355,11 +1604,11 @@ class CaptureApp:
         if candidate.document_id:
             document = self.archive.get_document(candidate.document_id)
             document_link = (
-                f"<p>Källa: <a href=\"/documents/{escape(document.id)}\">"
+                f"<p class=\"metadata-provenance\">Document: <a href=\"/documents/{escape(document.id)}\">"
                 f"{escape(document.title)}</a></p>"
             )
         confidence = (
-            f"<p>Confidence: {escape(candidate.confidence)}</p>"
+            f"<p class=\"metadata-provenance\">Säkerhet: {escape(candidate.confidence)}</p>"
             if candidate.confidence
             else ""
         )
@@ -1368,14 +1617,14 @@ class CaptureApp:
             f"{escape(candidate.prompt_version)}"
         )
         return f"""
-      <article id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
-        <h3>{escape(candidate.semantic_type)}</h3>
+      <article class="ai-candidate" id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
+        <p class="ai-provenance"><span class="system-label">AI-FÖRSLAG</span> {provenance}</p>
+        <h4>{escape(self._format_ai_type_label(candidate.semantic_type))}</h4>
         {document_link}
-        <p>{escape(candidate.original_content or candidate.content)}</p>
+        <p class="ai-suggestion">{escape(candidate.original_content or candidate.content)}</p>
         {confidence}
-        <p>Proveniens: AI - {provenance}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
-          <label for="content-{escape(candidate.id)}">Formulering</label>
+          <label for="content-{escape(candidate.id)}">Din formulering</label>
           <textarea id="content-{escape(candidate.id)}" name="content">{escape(candidate.content)}</textarea>
           <label for="reason-{escape(candidate.id)}">Avvisningsorsak</label>
           <select id="reason-{escape(candidate.id)}" name="rejection_reason">
@@ -1409,9 +1658,9 @@ class CaptureApp:
             )
         )
         return f"""
-      <article data-ai-reviewed-candidate-id="{escape(candidate.id)}">
-        <h4>{escape(candidate.semantic_type)} - {escape(candidate.review_status)}</h4>
-        <p>AI-original: {escape(candidate.original_content or candidate.content)}</p>
+      <article class="reviewed-ai-candidate" data-ai-reviewed-candidate-id="{escape(candidate.id)}">
+        <h4>{escape(self._format_ai_type_label(candidate.semantic_type))} - {escape(self._format_review_status(candidate.review_status))}</h4>
+        <p class="metadata-provenance">AI-original: {escape(candidate.original_content or candidate.content)}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
           <label for="reviewed-content-{escape(candidate.id)}">Formulering</label>
           <textarea id="reviewed-content-{escape(candidate.id)}" name="content">{escape(candidate.content)}</textarea>
@@ -1433,10 +1682,10 @@ class CaptureApp:
             except FileNotFoundError:
                 project_name = "Okänt projekt"
         return f"""
-      <article data-ai-reviewed-candidate-id="{escape(candidate.id)}">
-        <h4>ProjectSuggestion - {escape(candidate.review_status)}</h4>
+      <article class="reviewed-ai-candidate" data-ai-reviewed-candidate-id="{escape(candidate.id)}">
+        <h4>Project-förslag - {escape(self._format_review_status(candidate.review_status))}</h4>
         <p>Föreslaget projekt: {escape(project_name)}</p>
-        <p>AI-original: {escape(candidate.original_content or candidate.content)}</p>
+        <p class="metadata-provenance">AI-original: {escape(candidate.original_content or candidate.content)}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
           <button name="decision" type="submit" value="link_project">Markera länkad</button>
           <button name="decision" type="submit" value="reject">Markera avvisad</button>
@@ -1451,7 +1700,7 @@ class CaptureApp:
             project = self.archive.get_project(project_id)
             project_name = project.name
         confidence = (
-            f"<p>Confidence: {escape(candidate.confidence)}</p>"
+            f"<p class=\"metadata-provenance\">Säkerhet: {escape(candidate.confidence)}</p>"
             if candidate.confidence
             else ""
         )
@@ -1460,12 +1709,12 @@ class CaptureApp:
             f"{escape(candidate.prompt_version)}"
         )
         return f"""
-      <article id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
-        <h3>{escape(candidate.semantic_type)}</h3>
-        <p>Föreslaget project: {escape(project_name)}</p>
-        <p>{escape(candidate.original_content or candidate.content)}</p>
+      <article class="ai-candidate" id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
+        <p class="ai-provenance"><span class="system-label">AI-FÖRSLAG</span> {provenance}</p>
+        <h4>{escape(self._format_ai_type_label(candidate.semantic_type))}</h4>
+        <p>Föreslaget projekt: {escape(project_name)}</p>
+        <p class="ai-suggestion">{escape(candidate.original_content or candidate.content)}</p>
         {confidence}
-        <p>Proveniens: AI - {provenance}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
           <button name="decision" type="submit" value="link_project">Koppla till projekt</button>
           <button name="decision" type="submit" value="reject">Avvisa</button>
@@ -1490,7 +1739,9 @@ class CaptureApp:
         )
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
-            rendered_candidates = "<p>Inga väntande AI-kandidater för dokumentet.</p>"
+            rendered_candidates = (
+                '<p class="empty-state">Inga AI-förslag väntar på review för dokumentet.</p>'
+            )
         reviewed_candidates = self._render_reviewed_ai_candidates(
             self._reviewed_ai_candidates_for_document(document)
         )
@@ -1830,7 +2081,9 @@ class CaptureApp:
         )
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
-            rendered_candidates = "<p>Inga väntande AI-kandidater för dokumentet.</p>"
+            rendered_candidates = (
+                '<p class="empty-state">Inga AI-förslag väntar på review för dokumentet.</p>'
+            )
         rendered_runs = "\n".join(
             (
                 f"<li>{escape(run.status)} - {escape(run.model)} - "
@@ -1844,12 +2097,17 @@ class CaptureApp:
         return f"""
     <section id="ai-review" aria-labelledby="document-ai">
       <h2 id="document-ai">AI-review</h2>
-      {ai_action}
-      <h3>Väntande kandidater</h3>
+      <section class="ai-operation" aria-labelledby="ai-operation">
+        <h3 id="ai-operation">AI-operation</h3>
+        {ai_action}
+        <details>
+          <summary>Tidigare körningar</summary>
+          <ul>{rendered_runs}</ul>
+        </details>
+      </section>
+      <h3>Förslag att granska</h3>
       {rendered_candidates}
       <p><a href="/documents/{escape(document.id)}/review-history">Tidigare AI-review</a></p>
-      <h3>AI-körningar</h3>
-      <ul>{rendered_runs}</ul>
     </section>
 """
 
@@ -1896,7 +2154,7 @@ class CaptureApp:
             project = self.archive.get_project(project_id)
             project_name = project.name
         confidence = (
-            f"<p>Confidence: {escape(candidate.confidence)}</p>"
+            f"<p class=\"metadata-provenance\">Säkerhet: {escape(candidate.confidence)}</p>"
             if candidate.confidence
             else ""
         )
@@ -1905,12 +2163,12 @@ class CaptureApp:
             f"{escape(candidate.prompt_version)}"
         )
         return f"""
-      <article id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
-        <h3>{escape(candidate.semantic_type)}</h3>
+      <article class="ai-candidate" id="candidate-{escape(candidate.id)}" data-ai-review-candidate-id="{escape(candidate.id)}">
+        <p class="ai-provenance"><span class="system-label">AI-FÖRSLAG</span> {provenance}</p>
+        <h4>{escape(self._format_ai_type_label(candidate.semantic_type))}</h4>
         <p>Föreslaget projekt: {escape(project_name)}</p>
-        <p>{escape(candidate.original_content or candidate.content)}</p>
+        <p class="ai-suggestion">{escape(candidate.original_content or candidate.content)}</p>
         {confidence}
-        <p>Proveniens: AI - {provenance}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
           <button name="decision" type="submit" value="link_project">Koppla till projekt</button>
           <button name="decision" type="submit" value="reject">Avvisa</button>
@@ -2255,6 +2513,14 @@ class CaptureApp:
       font-weight: 650;
     }
 
+    h4 {
+      font-size: var(--step-0);
+      font-weight: 650;
+      line-height: 1.2;
+      margin: var(--space-4) 0 var(--space-3);
+      overflow-wrap: anywhere;
+    }
+
     p,
     li,
     dd {
@@ -2331,6 +2597,21 @@ class CaptureApp:
       padding: var(--space-4);
     }
 
+    details {
+      border-top: var(--line-thin);
+      margin-bottom: var(--space-4);
+      padding-top: var(--space-3);
+    }
+
+    summary {
+      cursor: pointer;
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+      min-height: 2.75rem;
+      padding: var(--space-2) 0;
+      text-transform: uppercase;
+    }
+
     input,
     select,
     textarea,
@@ -2401,6 +2682,170 @@ class CaptureApp:
       padding: var(--space-3);
       text-align: left;
       vertical-align: top;
+    }
+
+    .queue-summary {
+      border-bottom: var(--line-strong);
+      margin-bottom: var(--space-6);
+      padding-bottom: var(--space-4);
+    }
+
+    .queue-summary h2 {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .queue-summary__number,
+    .queue-count {
+      color: var(--color-cinnabar);
+      font-family: var(--font-inscription);
+      font-size: var(--step-1);
+      font-weight: 700;
+    }
+
+    .empty-state {
+      color: var(--color-muted);
+    }
+
+    .inbox-item {
+      display: grid;
+      gap: var(--space-5);
+      grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    }
+
+    .inbox-item h3 {
+      margin-top: 0;
+    }
+
+    .inbox-item a {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .inbox-item > form,
+    .inbox-item__context,
+    .inbox-item__decision {
+      border-top: 0;
+      margin-bottom: 0;
+      min-width: 0;
+      padding-top: 0;
+    }
+
+    .compact-meta {
+      font-size: var(--step--1);
+      margin-bottom: 0;
+    }
+
+    .decision-prompt {
+      font-family: var(--font-reading);
+      font-size: var(--step-1);
+      line-height: 1.45;
+    }
+
+    .optional-projects fieldset {
+      border: 0;
+      margin-bottom: 0;
+      padding: var(--space-3) 0 0;
+    }
+
+    .optional-projects label {
+      font-family: var(--font-system);
+      font-size: var(--step-0);
+      letter-spacing: 0;
+      text-transform: none;
+    }
+
+    .decision-actions {
+      align-items: center;
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-2);
+    }
+
+    .ai-operation {
+      border-top: var(--line-thin);
+      padding-top: var(--space-4);
+    }
+
+    .ai-review-group {
+      margin-bottom: var(--space-6);
+    }
+
+    .ai-candidate {
+      border-top: var(--line-strong);
+    }
+
+    .ai-provenance {
+      color: var(--color-muted);
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+    }
+
+    .ai-provenance .system-label {
+      color: var(--color-cinnabar);
+      margin-right: var(--space-2);
+    }
+
+    .ai-suggestion {
+      font-family: var(--font-reading);
+      font-size: var(--step-1);
+      line-height: 1.55;
+    }
+
+    .project-list__item {
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-4) 0;
+    }
+
+    .project-list__title {
+      font-size: var(--step-1);
+      font-weight: 650;
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .project-list__metadata {
+      color: var(--color-muted);
+      font-family: var(--font-inscription);
+      font-size: var(--step--1);
+    }
+
+    .capture-context {
+      color: var(--color-muted);
+    }
+
+    .capture-context a,
+    .page-context a {
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+
+    .capture-context .system-label {
+      color: var(--color-cinnabar);
+      margin-right: var(--space-2);
+    }
+
+    .capture-form textarea {
+      font-size: var(--step-1);
+      line-height: 1.55;
+      min-height: clamp(14rem, 38vh, 26rem);
+    }
+
+    #project-capture + .capture-context + .capture-form textarea {
+      min-height: clamp(10rem, 24vh, 16rem);
+    }
+
+    .capture-form details {
+      max-width: var(--measure-reading);
+    }
+
+    .capture-organization label {
+      font-family: var(--font-system);
+      font-size: var(--step-0);
+      letter-spacing: 0;
+      text-transform: none;
     }
 
     .documents-heading {
@@ -2557,6 +3002,10 @@ class CaptureApp:
         grid-template-columns: minmax(0, 1fr);
       }
 
+      .inbox-item {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
       .document-list__status {
         justify-self: start;
       }
@@ -2570,6 +3019,11 @@ class CaptureApp:
 
       .identity-subtitle {
         display: none;
+      }
+
+      .identity-title {
+        font-size: 1.05rem;
+        letter-spacing: 0.08em;
       }
 
       .identity-action {

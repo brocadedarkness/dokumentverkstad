@@ -122,7 +122,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn('href="/documents"', root_html)
             self.assertIn('href="/projects"', root_html)
             self.assertIn("Inga dokument ännu.", documents_html)
-            self.assertIn("Inga projekt ännu.", projects_html)
+            self.assertIn("Inga projects ännu.", projects_html)
             self.assertIn("Administration", admin_html)
             self.assertTrue((archive_root / "documents").is_dir())
             self.assertTrue((archive_root / "projects").is_dir())
@@ -134,7 +134,9 @@ class CaptureAppTests(unittest.TestCase):
 
             html = app.render_inbox()
 
-            self.assertIn("Inbox är tom.", html)
+            self.assertIn("Inget väntar på behandling.", html)
+            self.assertIn('<span class="queue-summary__number">0</span>', html)
+            self.assertIn("objekt behöver beslut eller review.", html)
             self.assertIn("Trash", html)
             self.assertEqual(html.count("data-ai-inbox-document-id="), 0)
 
@@ -215,8 +217,32 @@ class CaptureAppTests(unittest.TestCase):
             html = app.render_inbox()
 
             self.assertIn("Svår metadata", html)
-            self.assertIn("Originalfil: rapport.pdf", html)
+            self.assertIn("Originalfil", html)
+            self.assertIn("rapport.pdf", html)
+            self.assertIn("Väntar på beslut", html)
+            self.assertIn("Valfri Project-koppling", html)
+            self.assertIn("Granska dokumentet", html)
+            self.assertIn('value="done">Spara</button>', html)
+            self.assertNotIn("Status: new", html)
             self.assertIn(f"/documents/{document.id}", html)
+
+    def test_inbox_project_linking_is_optional_and_progressive(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            archive.create_document("Köobjekt")
+            for index in range(6):
+                archive.create_project(f"Project {index + 1}")
+            app = CaptureApp(archive)
+
+            html = app.render_inbox()
+
+            self.assertIn("Valfri Project-koppling", html)
+            self.assertIn(
+                "Valfritt. Välj bara ett sammanhang om det redan är tydligt.",
+                html,
+            )
+            self.assertIn("<details class=\"optional-projects\">", html)
+            self.assertEqual(html.count('name="project_id" type="checkbox"'), 6)
 
     def test_inbox_document_can_be_linked_to_multiple_projects_and_marked_done(self) -> None:
         with workspace_tempdir() as tmp:
@@ -640,6 +666,8 @@ class CaptureAppTests(unittest.TestCase):
             html = app.render_inbox()
 
             self.assertEqual(html.count("data-ai-inbox-document-id="), 2)
+            self.assertIn('<span class="queue-summary__number">5</span>', html)
+            self.assertIn("objekt behöver beslut eller review.", html)
             self.assertIn(
                 f'data-ai-inbox-document-id="{first_document.id}"',
                 html,
@@ -650,7 +678,7 @@ class CaptureAppTests(unittest.TestCase):
             )
             self.assertIn("2 AI-kandidater väntar", html)
             self.assertIn("1 AI-kandidat väntar", html)
-            self.assertIn("2 document har obearbetade AI-granskningar.", html)
+            self.assertIn("2 document har AI-förslag som väntar på review.", html)
             self.assertIn(f'href="/documents/{first_document.id}"', html)
             self.assertIn(f'href="/documents/{second_document.id}"', html)
             self.assertNotIn("<textarea", html)
@@ -775,6 +803,12 @@ class CaptureAppTests(unittest.TestCase):
             ]
             self.assertEqual(positions, sorted(positions))
             self.assertIn('id="candidate-', html)
+            self.assertIn("AI-FÖRSLAG", html)
+            self.assertIn("Förslag att granska", html)
+            self.assertIn("AI-operation", html)
+            self.assertIn("Tidigare körningar", html)
+            self.assertIn("Din formulering", html)
+            self.assertNotIn("Proveniens: AI", html)
 
     def test_project_suggestion_can_link_document_without_creating_accepted_knowledge(self) -> None:
         with workspace_tempdir() as tmp:
@@ -1743,6 +1777,20 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(loaded.name, "Institutioner")
             self.assertEqual(loaded.description, "Ny beskrivning")
 
+    def test_projects_page_prioritizes_existing_projects_over_creation(self) -> None:
+        with workspace_tempdir() as tmp:
+            archive = Archive(Path(tmp) / "archive")
+            project = archive.create_project("Bibliotekens medieförsörjning", "Arbetskontext")
+            app = CaptureApp(archive)
+
+            html = app.render_projects()
+
+            self.assertIn('class="page-workspace has-context"', html)
+            self.assertIn("<summary>Skapa Project</summary>", html)
+            self.assertIn("Befintliga sammanhang", html)
+            self.assertIn(f'href="/projects/{project.id}"', html)
+            self.assertIn("Arbetskontext", html)
+
     def test_render_project_shows_linked_notes_and_derived_documents(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -1761,6 +1809,11 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Rävfilosofi", html)
             self.assertIn("Projektanteckning", html)
             self.assertIn("North", html)
+            self.assertIn('<h2 class="context-title">Project</h2>', html)
+            self.assertIn("Captures och knowledge objects", html)
+            self.assertIn("Documents", html)
+            self.assertIn("<summary>Redigera Project</summary>", html)
+            self.assertIn("<summary>Organisera befintligt material</summary>", html)
             self.assertNotIn("Utanför projektet</p><small>ID:", html)
 
     def test_project_capture_suggests_project_but_can_be_removed(self) -> None:
@@ -1779,7 +1832,8 @@ class CaptureAppTests(unittest.TestCase):
             linked_notes = archive.list_knowledge_objects_for_project(project.id)
             unlinked = [note for note in notes if note.content == "Utan projekt"][0]
 
-            self.assertIn("Aktuellt project", html)
+            self.assertIn("Till Project", html)
+            self.assertIn("Project-koppling", html)
             self.assertIn('type="checkbox"', html)
             self.assertIn("checked", html)
             self.assertEqual(unlinked.project_ids, ())
