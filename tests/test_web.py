@@ -122,7 +122,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn('href="/documents"', root_html)
             self.assertIn('href="/projects"', root_html)
             self.assertIn("Inga dokument ännu.", documents_html)
-            self.assertIn("Inga projects ännu.", projects_html)
+            self.assertIn("Inga projekt ännu.", projects_html)
             self.assertIn("Administration", admin_html)
             self.assertTrue((archive_root / "documents").is_dir())
             self.assertTrue((archive_root / "projects").is_dir())
@@ -136,8 +136,8 @@ class CaptureAppTests(unittest.TestCase):
 
             self.assertIn("Inget väntar på behandling.", html)
             self.assertIn('<span class="queue-summary__number">0</span>', html)
-            self.assertIn("objekt behöver beslut eller review.", html)
-            self.assertIn("Trash", html)
+            self.assertIn("objekt behöver beslut eller granskning.", html)
+            self.assertIn("Papperskorg", html)
             self.assertEqual(html.count("data-ai-inbox-document-id="), 0)
 
     def test_page_shell_exposes_identity_tokens_and_current_navigation(self) -> None:
@@ -159,6 +159,10 @@ class CaptureAppTests(unittest.TestCase):
             )
             self.assertIn('--font-devis: "Monomakh", var(--font-inscription)', inbox_html)
             self.assertIn("font-family: var(--font-devis)", inbox_html)
+            self.assertIn("font-size: 0.95rem", inbox_html)
+            self.assertIn(".ai-suggestion", inbox_html)
+            self.assertIn("font-size: var(--step-0)", inbox_html)
+            self.assertIn("line-height: 1.5", inbox_html)
             self.assertIn("--color-ivory", inbox_html)
             self.assertIn("--color-ebony", inbox_html)
             self.assertIn("--color-cinnabar", inbox_html)
@@ -220,7 +224,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Originalfil", html)
             self.assertIn("rapport.pdf", html)
             self.assertIn("Väntar på beslut", html)
-            self.assertIn("Valfri Project-koppling", html)
+            self.assertIn("Valfri projektkoppling", html)
             self.assertIn("Granska dokumentet", html)
             self.assertIn('value="done">Spara</button>', html)
             self.assertNotIn("Status: new", html)
@@ -236,7 +240,7 @@ class CaptureAppTests(unittest.TestCase):
 
             html = app.render_inbox()
 
-            self.assertIn("Valfri Project-koppling", html)
+            self.assertIn("Valfri projektkoppling", html)
             self.assertIn(
                 "Valfritt. Välj bara ett sammanhang om det redan är tydligt.",
                 html,
@@ -319,7 +323,7 @@ class CaptureAppTests(unittest.TestCase):
             thread.start()
             try:
                 html = _get(server, "/trash")
-                self.assertIn("Document", html)
+                self.assertIn("Dokument", html)
                 self.assertIn("Slängd rapport", html)
                 self.assertIn("KB | 2024", html)
                 self.assertNotIn(f">{document.id}<", html)
@@ -531,7 +535,7 @@ class CaptureAppTests(unittest.TestCase):
                         f'action="/documents/{document.id}/candidates/{candidate.id}"',
                         html,
                     )
-                self.assertLess(html.index("Claims"), html.index("Insights"))
+                self.assertLess(html.index("Påståenden"), html.index("Insikter"))
 
                 for claim in (first_claim, second_claim):
                     status, location = _post(
@@ -667,7 +671,7 @@ class CaptureAppTests(unittest.TestCase):
 
             self.assertEqual(html.count("data-ai-inbox-document-id="), 2)
             self.assertIn('<span class="queue-summary__number">5</span>', html)
-            self.assertIn("objekt behöver beslut eller review.", html)
+            self.assertIn("objekt behöver beslut eller granskning.", html)
             self.assertIn(
                 f'data-ai-inbox-document-id="{first_document.id}"',
                 html,
@@ -678,7 +682,7 @@ class CaptureAppTests(unittest.TestCase):
             )
             self.assertIn("2 AI-kandidater väntar", html)
             self.assertIn("1 AI-kandidat väntar", html)
-            self.assertIn("2 document har AI-förslag som väntar på review.", html)
+            self.assertIn("2 dokument har AI-förslag som väntar på granskning.", html)
             self.assertIn(f'href="/documents/{first_document.id}"', html)
             self.assertIn(f'href="/documents/{second_document.id}"', html)
             self.assertNotIn("<textarea", html)
@@ -749,10 +753,10 @@ class CaptureAppTests(unittest.TestCase):
                 html.index("Capture text"),
             ]
             self.assertEqual(positions, sorted(positions))
-            self.assertLess(html.index("Summary"), html.index("Claims"))
-            self.assertLess(html.index("Claims"), html.index("Insights"))
-            self.assertLess(html.index("Insights"), html.index("Questions"))
-            self.assertLess(html.index("Questions"), html.index("Captures"))
+            self.assertLess(html.index("Sammanfattning"), html.index("Påståenden"))
+            self.assertLess(html.index("Påståenden"), html.index("Insikter"))
+            self.assertLess(html.index("Insikter"), html.index("Frågor"))
+            self.assertLess(html.index("Frågor"), html.index("Noteringar"))
 
     def test_review_history_is_linked_but_not_rendered_in_document_main_flow(self) -> None:
         with workspace_tempdir() as tmp:
@@ -1378,7 +1382,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Biblioteket", html)
             self.assertIn("2024", html)
             self.assertIn("AI-analyserad", html)
-            self.assertIn("1 egen capture", html)
+            self.assertIn("1 egen notering", html)
             self.assertNotIn("2 egna captures", html)
             self.assertNotIn(f">{document.id}<", html)
             self.assertNotIn("ID:", html)
@@ -1487,7 +1491,7 @@ class CaptureAppTests(unittest.TestCase):
             html = app.render_document(document.id)
 
             self.assertIn('class="page-workspace has-context"', html)
-            self.assertIn('<h2 class="context-title">Document</h2>', html)
+            self.assertIn('<h2 class="context-title">Dokument</h2>', html)
             self.assertIn('<details class="metadata-editor">', html)
             self.assertIn("<summary>Redigera metadata</summary>", html)
             self.assertIn(f'action="/documents/{document.id}/metadata"', html)
@@ -1540,7 +1544,7 @@ class CaptureAppTests(unittest.TestCase):
             archive = Archive(config.archive_root)
             documents = archive.list_documents()
             self.assertEqual(status, 200)
-            self.assertIn("Dokumentet har lagts till i Inbox.", body)
+            self.assertIn("Dokumentet har lagts till i inkorgen.", body)
             self.assertEqual(len(documents), 1)
             self.assertEqual(documents[0].title, "Mobil rapport")
             self.assertEqual(documents[0].year, "2024")
@@ -1578,7 +1582,7 @@ class CaptureAppTests(unittest.TestCase):
                 thread.join()
 
             self.assertEqual(status, 200)
-            self.assertIn("PDF-filen finns redan i Archive.", body)
+            self.assertIn("PDF-filen finns redan i arkivet.", body)
             self.assertEqual(len(Archive(config.archive_root).list_documents()), 1)
 
     def test_directory_ingest_and_upload_share_checksum_duplicate_semantics(self) -> None:
@@ -1606,7 +1610,7 @@ class CaptureAppTests(unittest.TestCase):
                 thread.join()
 
             self.assertEqual(status, 200)
-            self.assertIn("PDF-filen finns redan i Archive.", body)
+            self.assertIn("PDF-filen finns redan i arkivet.", body)
             self.assertEqual(len(Archive(config.archive_root).list_documents()), 1)
 
     def test_upload_filename_traversal_is_reduced_to_safe_basename(self) -> None:
@@ -1786,8 +1790,8 @@ class CaptureAppTests(unittest.TestCase):
             html = app.render_projects()
 
             self.assertIn('class="page-workspace has-context"', html)
-            self.assertIn("<summary>Skapa Project</summary>", html)
-            self.assertIn("Befintliga sammanhang", html)
+            self.assertIn("<summary>Skapa projekt</summary>", html)
+            self.assertIn("Befintliga projekt", html)
             self.assertIn(f'href="/projects/{project.id}"', html)
             self.assertIn("Arbetskontext", html)
 
@@ -1809,10 +1813,10 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn("Rävfilosofi", html)
             self.assertIn("Projektanteckning", html)
             self.assertIn("North", html)
-            self.assertIn('<h2 class="context-title">Project</h2>', html)
-            self.assertIn("Captures och knowledge objects", html)
-            self.assertIn("Documents", html)
-            self.assertIn("<summary>Redigera Project</summary>", html)
+            self.assertIn('<h2 class="context-title">Projekt</h2>', html)
+            self.assertIn("Noteringar och kunskapsobjekt", html)
+            self.assertIn("Dokument", html)
+            self.assertIn("<summary>Redigera projekt</summary>", html)
             self.assertIn("<summary>Organisera befintligt material</summary>", html)
             self.assertNotIn("Utanför projektet</p><small>ID:", html)
 
@@ -1832,8 +1836,8 @@ class CaptureAppTests(unittest.TestCase):
             linked_notes = archive.list_knowledge_objects_for_project(project.id)
             unlinked = [note for note in notes if note.content == "Utan projekt"][0]
 
-            self.assertIn("Till Project", html)
-            self.assertIn("Project-koppling", html)
+            self.assertIn("Till projekt", html)
+            self.assertIn("Projektkoppling", html)
             self.assertIn('type="checkbox"', html)
             self.assertIn("checked", html)
             self.assertEqual(unlinked.project_ids, ())

@@ -1724,6 +1724,86 @@ En möjlig ordning är:
 
 Deliterationerna får ändras efter att designarbetet konkretiserats.
 
+### 9.5 – Slutpolish och prestandadiagnos
+
+**Syfte:** Avsluta konsolideringen av den lokala arbetsytan innan
+Dokumentverkstad flyttas mot en serverbaserad referensmiljö i Iteration 10.
+
+#### Språk
+
+Användargränssnittet ska som huvudregel använda svenska begrepp.
+
+Nuvarande engelska användarbegrepp ersätts där det är lämpligt, bland annat:
+
+- Inbox → Inkorg
+- Document / Documents → Dokument
+- Project / Projects → Projekt
+- Capture / Captures → Notering / Noteringar
+- Summary → Sammanfattning
+- Claims → Påståenden
+- Insights → Insikter
+- Questions → Frågor
+- AI review → AI-granskning
+- Knowledge Objects → Kunskapsobjekt
+
+Detta är en ändring av användargränssnittets språk, inte av domänmodell,
+klassnamn, routes, databasstruktur eller interna tekniska begrepp.
+
+Projects ska fortsatt förstås och utformas som sammanhang, även om
+användargränssnittets benämning är **Projekt**.
+
+#### Typografisk polish
+
+Gör endast redan identifierade mindre justeringar:
+
+- öka storleken på den kyrkslaviska Monomakh-devisen försiktigt,
+- minska storleken på den stora serifbaserade lästexten, särskilt i
+  AI-granskningen, och justera vid behov radavståndet.
+
+Byt inte reading-font eller identitetstypsnitt utan ett separat beslut efter
+visuell kontroll.
+
+#### Prestandadiagnos
+
+Mät svarstider för centrala lokala vyer, minst:
+
+- Inkorg,
+- Dokument,
+- ett Dokument,
+- Projekt,
+- ett Projekt,
+- Notering.
+
+Identifiera var eventuell väntetid uppstår, exempelvis i:
+
+- databasfrågor,
+- upprepade queries/N+1,
+- filsystemåtkomst,
+- Python/rendering,
+- annan applikationslogik.
+
+Dokumentera ett lokalt baseline-resultat inför Iteration 10.
+
+Optimera inte generellt. Åtgärda endast en flaskhals i 9.5 om den är tydligt
+identifierad, lokal, låg-risk och ger en påtaglig förbättring.
+
+#### Avgränsning
+
+9.5 ska inte införa:
+
+- ny domänmodell,
+- nya Project- eller Capture/Notering-begrepp,
+- ny sökfunktion,
+- semantic search eller embeddings,
+- OCR,
+- MCP,
+- nya frontendramverk,
+- större visuell redesign.
+
+Iteration 9.5 är klar när gränssnittet är språkligt sammanhållet, de
+identifierade typografiska problemen är polerade och det finns ett
+prestandabaseline inför serverflytten.
+
 ## Tester
 
 Iteration 9 är godkänd när:

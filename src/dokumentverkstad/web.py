@@ -102,11 +102,11 @@ class CaptureApp:
             else self._accepted_recent_notes()
         )
         return self._page(
-            title="Capture",
+            title="Notering",
             active_nav="capture",
             context=self._render_capture_context(document=document, project=project),
             body=f"""
-    <h1>Capture</h1>
+    <h1>Notering</h1>
     {self._render_capture_form(document=document, project=project)}
     <section aria-labelledby="recent-notes">
       <h2 id="recent-notes">Senaste noteringar</h2>
@@ -132,45 +132,45 @@ class CaptureApp:
         )
         if not rendered_documents:
             rendered_documents = (
-                '<p class="empty-state">Inga documents väntar på beslut.</p>'
+                '<p class="empty-state">Inga dokument väntar på beslut.</p>'
             )
         if not rendered_candidates:
             rendered_candidates = (
-                '<p class="empty-state">Inga AI-förslag väntar på review.</p>'
+                '<p class="empty-state">Inga AI-förslag väntar på granskning.</p>'
             )
         context = f"""
-    <h2 class="context-title">Inbox</h2>
+    <h2 class="context-title">Inkorg</h2>
     <div class="context-group">
       <p class="system-label">Väntande</p>
       <p class="queue-count">{queue_count} objekt</p>
     </div>
     <div class="context-group">
       <p class="system-label">Snabblänkar</p>
-      <nav class="context-actions" aria-label="Inbox-länkar">
+      <nav class="context-actions" aria-label="Inkorgslänkar">
         <a href="/upload">Lägg till PDF</a>
-        <a href="/trash">Trash</a>
+        <a href="/trash">Papperskorg</a>
         <a href="/admin">Administration</a>
       </nav>
     </div>
 """
 
         return self._page(
-            title="Inbox",
+            title="Inkorg",
             active_nav="inbox",
             context=context,
             body=f"""
-    <h1>Inbox</h1>
+    <h1>Inkorg</h1>
     <section class="queue-summary" aria-labelledby="inbox-queue">
       <h2 id="inbox-queue">Väntande</h2>
-      <p><span class="queue-summary__number">{queue_count}</span> objekt behöver beslut eller review.</p>
+      <p><span class="queue-summary__number">{queue_count}</span> objekt behöver beslut eller granskning.</p>
       {empty_notice}
     </section>
     <section aria-labelledby="inbox-documents">
-      <h2 id="inbox-documents">Documents som väntar</h2>
+      <h2 id="inbox-documents">Dokument som väntar</h2>
       {rendered_documents}
     </section>
     <section aria-labelledby="inbox-candidates">
-      <h2 id="inbox-candidates">AI-review</h2>
+      <h2 id="inbox-candidates">AI-granskning</h2>
       {rendered_candidates}
     </section>
 """,
@@ -186,7 +186,7 @@ class CaptureApp:
             title="Lägg till PDF",
             active_nav="inbox",
             body=f"""
-    <p><a href="/inbox">Inbox</a></p>
+    <p><a href="/inbox">Inkorg</a></p>
     <h1>Lägg till PDF</h1>
     {feedback}
     <form method="post" action="/upload" enctype="multipart/form-data">
@@ -204,17 +204,17 @@ class CaptureApp:
             for document in documents
         )
         if not rendered_documents:
-            rendered_documents = "<li>Trash är tom.</li>"
+            rendered_documents = "<li>Papperskorgen är tom.</li>"
 
         return self._page(
-            title="Trash",
+            title="Papperskorg",
             active_nav="inbox",
             body=f"""
-    <h1>Trash</h1>
+    <h1>Papperskorg</h1>
     <ul>
       {rendered_documents}
     </ul>
-    <p><a href="/inbox">Inbox</a></p>
+    <p><a href="/inbox">Inkorg</a></p>
 """,
         )
 
@@ -223,7 +223,7 @@ class CaptureApp:
         reference_note = (
             f"<p>Permanent radering spärrad: {escape(', '.join(references))} refererar till dokumentet.</p>"
             if references
-            else "<p>Permanent radering kan inte ångras genom vanlig Restore.</p>"
+            else "<p>Permanent radering kan inte ångras genom vanlig återställning.</p>"
         )
         delete_form = (
             ""
@@ -243,7 +243,7 @@ class CaptureApp:
             metadata = f"{metadata} | {document.year}"
         return f"""
       <li>
-        <p>Document</p>
+        <p>Dokument</p>
         <a href="/documents/{escape(document.id)}">{escape(document.title)}</a>
         <p>{escape(metadata)}</p>
         <form method="post" action="/trash/documents/{escape(document.id)}/restore">
@@ -285,7 +285,7 @@ class CaptureApp:
       {self._render_usage_summary_table(statistics.usage_by_month, "månad")}
     </section>
     <section aria-labelledby="ai-reviews">
-      <h2 id="ai-reviews">Review per kandidattyp</h2>
+      <h2 id="ai-reviews">Granskning per kandidattyp</h2>
       {self._render_candidate_review_table(statistics.review_by_candidate_type)}
     </section>
     <section aria-labelledby="ai-rejection-reasons">
@@ -308,15 +308,15 @@ class CaptureApp:
     <section aria-labelledby="health">
       <h2 id="health">Driftstatus</h2>
       <dl>
-        <dt>Health</dt>
+        <dt>Status</dt>
         <dd>{escape(health.status)}</dd>
-        <dt>Archive</dt>
+        <dt>Arkiv</dt>
         <dd>{'OK' if health.archive_readable else 'problem'}</dd>
         <dt>Index</dt>
         <dd>{'OK' if health.index_exists else 'saknas'}</dd>
         <dt>OpenAI credential</dt>
         <dd>{escape(health.credential_status)}</dd>
-        <dt>Trash</dt>
+        <dt>Papperskorg</dt>
         <dd>{health.counts.trash_objects}</dd>
       </dl>
       <ul>{messages}</ul>
@@ -360,12 +360,12 @@ class CaptureApp:
         )
 
         return self._page(
-            title="Documents",
+            title="Dokument",
             active_nav="documents",
             body=f"""
-    <h1>Documents</h1>
+    <h1>Dokument</h1>
     <div class="documents-heading">
-      <h2>Registrerade documents</h2>
+      <h2>Registrerade dokument</h2>
       <p class="metadata-provenance">{len(items)} av {total_count}</p>
     </div>
     <ul class="document-list">
@@ -373,7 +373,7 @@ class CaptureApp:
     </ul>
 """,
             context=f"""
-    <h2 class="context-title">Documents</h2>
+    <h2 class="context-title">Dokument</h2>
     <form class="filter-form" id="documents-filter" method="get" action="/documents">
       <div class="filter-field">
         <label for="document-filter-q">Sök</label>
@@ -388,7 +388,7 @@ class CaptureApp:
         </select>
       </div>
       <div class="filter-field">
-        <label for="document-project">Project</label>
+        <label for="document-project">Projekt</label>
         <select id="document-project" name="project_id">
           <option value=""{" selected" if selected_project_id == "" else ""}>Alla</option>
           {project_options}
@@ -406,19 +406,19 @@ class CaptureApp:
     </form>
     <div class="context-group context-actions">
       <a href="/documents">Nollställ filter</a>
-      <a href="/documents/new">Skapa Document manuellt</a>
-      <a href="/capture">Capture utan dokument</a>
+      <a href="/documents/new">Skapa dokument manuellt</a>
+      <a href="/capture">Notering utan dokument</a>
     </div>
 """,
         )
 
     def render_new_document(self) -> str:
         return self._page(
-            title="Skapa Document manuellt",
+            title="Skapa dokument manuellt",
             active_nav="documents",
             body="""
-    <p><a href="/documents">Documents</a></p>
-    <h1>Skapa Document manuellt</h1>
+    <p><a href="/documents">Dokument</a></p>
+    <h1>Skapa dokument manuellt</h1>
     <form method="post" action="/documents">
       <label for="title">Titel</label>
       <input id="title" name="title" type="text" required>
@@ -426,7 +426,7 @@ class CaptureApp:
       <input id="author" name="author" type="text">
       <label for="year">Utgivningsår</label>
       <input id="year" name="year" type="text" inputmode="numeric" pattern="\\d{4}">
-      <button type="submit">Skapa document</button>
+      <button type="submit">Skapa dokument</button>
     </form>
 """,
         )
@@ -559,8 +559,8 @@ class CaptureApp:
 
     def _format_capture_count(self, count: int) -> str:
         if count == 1:
-            return "1 egen capture"
-        return f"{count} egna captures"
+            return "1 egen notering"
+        return f"{count} egna noteringar"
 
     def render_document(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
@@ -577,7 +577,7 @@ class CaptureApp:
             for project in linked_projects
         )
         if not rendered_projects:
-            rendered_projects = "Inga projects"
+            rendered_projects = "Inga projekt"
         original_file = (
             f"<a href=\"/documents/{escape(document.id)}/original\">"
             f"{escape(document.original_filename or 'original.pdf')}</a>"
@@ -588,7 +588,7 @@ class CaptureApp:
             title=document.title,
             active_nav="documents",
             body=f"""
-    <p><a href="/documents">Documents</a></p>
+    <p><a href="/documents">Dokument</a></p>
     <h1>{escape(document.title)}</h1>
     <dl>
       <dt>Upphov</dt>
@@ -597,13 +597,13 @@ class CaptureApp:
       <dd>{escape(document.year or "Okänt")}</dd>
       <dt>Originalfil</dt>
       <dd>{original_file}</dd>
-      <dt>Projects</dt>
+      <dt>Projekt</dt>
       <dd>{rendered_projects}</dd>
     </dl>
     {self._render_document_metadata_form(document)}
     {self._render_document_ai_panel(document, candidates, runs)}
     <section aria-labelledby="document-capture">
-      <h2 id="document-capture">Capture</h2>
+      <h2 id="document-capture">Notering</h2>
       {self._render_capture_form(document=document, show_context=False)}
     </section>
     <section aria-labelledby="document-notes">
@@ -643,13 +643,13 @@ class CaptureApp:
     {credential_note}
     <p>Dokumentets extraherade text skickas till extern AI-provider först när du startar analysen.</p>
     <dl>
-      <dt>Document</dt>
+      <dt>Dokument</dt>
       <dd>{escape(document.title)}</dd>
       <dt>Provider</dt>
       <dd>{escape(self.ai_provider_name)}</dd>
       <dt>Modell</dt>
       <dd>{escape(self.ai_model)}</dd>
-      <dt>Capabilities</dt>
+      <dt>Funktioner</dt>
       <dd>{escape(', '.join(AI_CAPABILITIES))}</dd>
       <dt>Uppskattade input-token</dt>
       <dd>{estimate.input_tokens}</dd>
@@ -679,42 +679,62 @@ class CaptureApp:
 
     def render_projects(self) -> str:
         projects = self.archive.list_projects()
+        project_document_ids: dict[str, set[str]] = {project.id: set() for project in projects}
+        project_note_counts: dict[str, int] = {project.id: 0 for project in projects}
+        for document in self.archive.list_documents():
+            for project_id in document.project_ids:
+                if project_id in project_document_ids:
+                    project_document_ids[project_id].add(document.id)
+        for note in self.archive.list_recent_knowledge_objects(limit=10_000):
+            if note.review_status != "accepted":
+                continue
+            for project_id in note.project_ids:
+                if project_id not in project_note_counts:
+                    continue
+                project_note_counts[project_id] += 1
+                if note.document_id:
+                    project_document_ids[project_id].add(note.document_id)
         rendered_projects = "\n".join(
-            self._render_project_list_item(project) for project in projects
+            self._render_project_list_item(
+                project,
+                document_count=len(project_document_ids[project.id]),
+                note_count=project_note_counts[project.id],
+            )
+            for project in projects
         )
         if not rendered_projects:
             rendered_projects = (
-                '<li><p class="empty-state">Inga projects ännu.</p></li>'
+                '<li><p class="empty-state">Inga projekt ännu.</p></li>'
             )
         context = f"""
-    <h2 class="context-title">Projects</h2>
+    <h2 class="context-title">Projekt</h2>
     <div class="context-group">
       <p class="system-label">Sammanhang</p>
-      <p>{len(projects)} project</p>
+      <p>{self._format_project_count(len(projects))}</p>
     </div>
     <details class="metadata-editor">
-      <summary>Skapa Project</summary>
+      <summary>Skapa projekt</summary>
       <form method="post" action="/projects">
         <label for="name">Namn</label>
         <input id="name" name="name" type="text" required>
         <label for="description">Beskrivning</label>
         <input id="description" name="description" type="text">
-        <button type="submit">Skapa Project</button>
+        <button type="submit">Skapa projekt</button>
       </form>
     </details>
     <div class="context-group">
-      <p><a href="/capture">Capture utan Project</a></p>
+      <p><a href="/capture">Notering utan projekt</a></p>
     </div>
 """
 
         return self._page(
-            title="Projects",
+            title="Projekt",
             active_nav="projects",
             context=context,
             body=f"""
-    <h1>Projects</h1>
+    <h1>Projekt</h1>
     <section aria-labelledby="registered-projects">
-      <h2 id="registered-projects">Befintliga sammanhang</h2>
+      <h2 id="registered-projects">Befintliga projekt</h2>
       <ul class="project-list">
       {rendered_projects}
       </ul>
@@ -736,13 +756,13 @@ class CaptureApp:
         )
         if not rendered_documents:
             rendered_documents = (
-                '<li><p class="empty-state">Inga documents i detta sammanhang ännu.</p></li>'
+                '<li><p class="empty-state">Inga dokument i detta projekt ännu.</p></li>'
             )
         rendered_notes = self._render_notes(
-            notes, "Inga captures i detta sammanhang ännu."
+            notes, "Inga noteringar i detta projekt ännu."
         )
         context = f"""
-    <h2 class="context-title">Project</h2>
+    <h2 class="context-title">Projekt</h2>
     <div class="context-group">
       <p class="system-label">Namn</p>
       <p>{escape(project.name)}</p>
@@ -754,25 +774,25 @@ class CaptureApp:
     <div class="context-group">
       <p class="system-label">Innehåll</p>
       <dl>
-        <dt>Documents</dt>
+        <dt>Dokument</dt>
         <dd>{len(documents)}</dd>
-        <dt>Captures</dt>
+        <dt>Noteringar</dt>
         <dd>{len(notes)}</dd>
       </dl>
     </div>
     <details class="metadata-editor">
-      <summary>Redigera Project</summary>
+      <summary>Redigera projekt</summary>
       <form method="post" action="/projects/{escape(project.id)}">
         <label for="name">Namn</label>
         <input id="name" name="name" type="text" value="{escape(project.name)}" required>
         <label for="description">Beskrivning</label>
         <input id="description" name="description" type="text" value="{escape(project.description)}">
-        <button type="submit">Spara Project</button>
+        <button type="submit">Spara projekt</button>
       </form>
     </details>
     <div class="context-group">
-      <p><a href="/projects">Alla Projects</a></p>
-      <p><a href="/capture?project_id={escape(project.id)}">Capture i Project</a></p>
+      <p><a href="/projects">Alla projekt</a></p>
+      <p><a href="/capture?project_id={escape(project.id)}">Notering i projekt</a></p>
     </div>
 """
 
@@ -783,19 +803,19 @@ class CaptureApp:
             body=f"""
     <h1>{escape(project.name)}</h1>
     <section aria-labelledby="project-notes">
-      <h2 id="project-notes">Captures och knowledge objects</h2>
+      <h2 id="project-notes">Noteringar och kunskapsobjekt</h2>
       <ul>
         {rendered_notes}
       </ul>
     </section>
     <section aria-labelledby="project-documents">
-      <h2 id="project-documents">Documents</h2>
+      <h2 id="project-documents">Dokument</h2>
       <ul class="project-document-list">
         {rendered_documents}
       </ul>
     </section>
     <section aria-labelledby="project-capture">
-      <h2 id="project-capture">Ny Capture</h2>
+      <h2 id="project-capture">Ny notering</h2>
       {self._render_capture_form(project=project)}
     </section>
     <details class="metadata-editor">
@@ -806,9 +826,9 @@ class CaptureApp:
 """,
         )
 
-    def _render_project_list_item(self, project: Project) -> str:
-        documents = self.archive.list_documents_for_project(project.id)
-        notes = self.archive.list_knowledge_objects_for_project(project.id)
+    def _render_project_list_item(
+        self, project: Project, document_count: int, note_count: int
+    ) -> str:
         description = (
             f"<p class=\"metadata-provenance\">{escape(project.description)}</p>"
             if project.description
@@ -818,9 +838,24 @@ class CaptureApp:
         <li class="project-list__item">
           <a class="project-list__title" href="/projects/{escape(project.id)}">{escape(project.name)}</a>
           {description}
-          <p class="project-list__metadata">{len(documents)} documents | {len(notes)} captures</p>
+          <p class="project-list__metadata">{self._format_document_count(document_count)} | {self._format_note_count(note_count)}</p>
         </li>
 """
+
+    def _format_document_count(self, count: int) -> str:
+        if count == 1:
+            return "1 dokument"
+        return f"{count} dokument"
+
+    def _format_note_count(self, count: int) -> str:
+        if count == 1:
+            return "1 notering"
+        return f"{count} noteringar"
+
+    def _format_project_count(self, count: int) -> str:
+        if count == 1:
+            return "1 projekt"
+        return f"{count} projekt"
 
     def _render_project_document_item(self, document: Document) -> str:
         metadata = " | ".join(
@@ -1094,13 +1129,13 @@ class CaptureApp:
         note = self.archive.get_knowledge_object(object_id)
         context = self._render_note_edit_context(note)
         return self._page(
-            title="Redigera capture",
+            title="Redigera notering",
             active_nav="capture",
             context=context,
             body=f"""
-    <h1>Redigera capture</h1>
+    <h1>Redigera notering</h1>
     <form class="capture-form" method="post" action="/knowledge/{escape(note.id)}">
-      <label for="content">Capture</label>
+      <label for="content">Notering</label>
       <textarea id="content" name="content" required>{escape(note.content)}</textarea>
       <details>
         <summary>Källposition</summary>
@@ -1130,7 +1165,7 @@ class CaptureApp:
             )
             if show_context:
                 context = (
-                    '<p class="capture-context"><span class="system-label">Till Document</span> '
+                    '<p class="capture-context"><span class="system-label">Till dokument</span> '
                     f"<a href=\"/documents/{escape(document.id)}\">"
                     f"{escape(document.title)}</a></p>"
                 )
@@ -1145,13 +1180,13 @@ class CaptureApp:
             action = f"/capture?project_id={escape(project.id)}"
             if show_context:
                 context = (
-                    '<p class="capture-context"><span class="system-label">Till Project</span> '
+                    '<p class="capture-context"><span class="system-label">Till projekt</span> '
                     f"<a href=\"/projects/{escape(project.id)}\">"
                     f"{escape(project.name)}</a></p>"
                 )
             project_choice = (
                 '<details class="capture-organization" open>'
-                "<summary>Project-koppling</summary>"
+                "<summary>Projektkoppling</summary>"
                 "<label>"
                 f"<input name=\"project_id\" type=\"checkbox\" value=\"{escape(project.id)}\" checked>"
                 f"Koppla till {escape(project.name)}</label>"
@@ -1162,7 +1197,7 @@ class CaptureApp:
     {context}
     <form class="capture-form" method="post" action="{action}">
       {hidden_document}
-      <label for="content">Capture</label>
+      <label for="content">Notering</label>
       <textarea id="content" name="content" autofocus required></textarea>
       {source_location}
       {project_choice}
@@ -1173,22 +1208,22 @@ class CaptureApp:
     def _render_capture_context(
         self, document: Document | None = None, project: Project | None = None
     ) -> str:
-        target = "Fristående Capture"
-        detail = "Kan sparas utan Document eller Project."
+        target = "Fristående notering"
+        detail = "Kan sparas utan dokument eller projekt."
         if document:
-            target = "Document"
+            target = "Dokument"
             detail = (
                 f"<a href=\"/documents/{escape(document.id)}\">"
                 f"{escape(document.title)}</a>"
             )
         elif project:
-            target = "Project"
+            target = "Projekt"
             detail = (
                 f"<a href=\"/projects/{escape(project.id)}\">"
                 f"{escape(project.name)}</a>"
             )
         return f"""
-    <h2 class="context-title">Capture</h2>
+    <h2 class="context-title">Notering</h2>
     <div class="context-group">
       <p class="system-label">Till</p>
       <p>{target}</p>
@@ -1197,37 +1232,37 @@ class CaptureApp:
 """
 
     def _render_note_edit_context(self, note: KnowledgeObject) -> str:
-        target = "Fristående Capture"
-        detail = "Ingen Document- eller Project-koppling."
+        target = "Fristående notering"
+        detail = "Ingen dokument- eller projektkoppling."
         if note.document_id:
             try:
                 document = self.archive.get_document(note.document_id)
-                target = "Document"
+                target = "Dokument"
                 detail = (
                     f"<a href=\"/documents/{escape(document.id)}\">"
                     f"{escape(document.title)}</a>"
                 )
             except FileNotFoundError:
-                target = "Document"
-                detail = "Document saknas i Archive."
+                target = "Dokument"
+                detail = "Dokument saknas i arkivet."
         elif note.project_ids:
             try:
                 project = self.archive.get_project(note.project_ids[0])
-                target = "Project"
+                target = "Projekt"
                 detail = (
                     f"<a href=\"/projects/{escape(project.id)}\">"
                     f"{escape(project.name)}</a>"
                 )
             except FileNotFoundError:
-                target = "Project"
-                detail = "Project saknas i Archive."
+                target = "Projekt"
+                detail = "Projekt saknas i arkivet."
         history_note = (
             f"{len(note.history)} tidigare versioner"
             if note.history
             else "Ingen tidigare version"
         )
         return f"""
-    <h2 class="context-title">Capture</h2>
+    <h2 class="context-title">Notering</h2>
     <div class="context-group">
       <p class="system-label">Till</p>
       <p>{target}</p>
@@ -1246,7 +1281,7 @@ class CaptureApp:
         rendered_projects: str,
     ) -> str:
         return f"""
-    <h2 class="context-title">Document</h2>
+    <h2 class="context-title">Dokument</h2>
     <div class="context-group document-context__meta">
       <dl>
         <dt>Upphov</dt>
@@ -1255,7 +1290,7 @@ class CaptureApp:
         <dd>{escape(document.year or "Okänt")}</dd>
         <dt>Originalfil</dt>
         <dd>{original_file}</dd>
-        <dt>Projects</dt>
+        <dt>Projekt</dt>
         <dd>{rendered_projects}</dd>
       </dl>
     </div>
@@ -1296,7 +1331,7 @@ class CaptureApp:
     <section aria-labelledby="link-note">
       <h2 id="link-note">Koppla befintlig notering</h2>
       <form method="post" action="/projects/{escape(project.id)}/links">
-        <label for="object_id">Knowledge Object</label>
+        <label for="object_id">Kunskapsobjekt</label>
         <select id="object_id" name="object_id">
           {options}
         </select>
@@ -1317,7 +1352,7 @@ class CaptureApp:
             for project in projects
         )
         if not project_options:
-            project_options = "<p>Inga projects finns ännu.</p>"
+            project_options = "<p>Inga projekt finns ännu.</p>"
         original_filename = (
             f"<dd>{escape(document.original_filename)}</dd>"
             if document.original_filename
@@ -1330,13 +1365,13 @@ class CaptureApp:
         project_hint = (
             "Valfritt. Välj bara ett sammanhang om det redan är tydligt."
             if projects
-            else "Valfritt. Det finns inga projects att välja ännu."
+            else "Valfritt. Det finns inga projekt att välja ännu."
         )
 
         return f"""
       <article class="inbox-item">
         <div class="inbox-item__context">
-          <p class="system-label">Document i Inbox</p>
+          <p class="system-label">Dokument i inkorg</p>
           <h3><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></h3>
           <dl class="compact-meta">
             <dt>Originalfil</dt>
@@ -1350,11 +1385,11 @@ class CaptureApp:
           </dl>
         </div>
         <form method="post" action="/inbox/documents/{escape(document.id)}">
-          <p class="decision-prompt">Granska dokumentet, koppla eventuellt ett Project och välj nästa steg.</p>
+          <p class="decision-prompt">Granska dokumentet, koppla eventuellt ett projekt och välj nästa steg.</p>
           <details class="optional-projects"{projects_open}>
-            <summary>Valfri Project-koppling</summary>
+            <summary>Valfri projektkoppling</summary>
             <fieldset>
-              <legend>Koppla till projects</legend>
+              <legend>Koppla till projekt</legend>
               <p class="metadata-provenance">{project_hint}</p>
               {project_options}
             </fieldset>
@@ -1373,7 +1408,7 @@ class CaptureApp:
         if not grouped:
             return ""
         summary = (
-            f"<p>{len(grouped)} document har AI-förslag som väntar på review.</p>"
+            f"<p>{self._format_document_count(len(grouped))} har AI-förslag som väntar på granskning.</p>"
         )
         rendered_items = "\n".join(
             self._render_ai_inbox_document(document, pending_count)
@@ -1408,25 +1443,25 @@ class CaptureApp:
         return f"""
       <article class="inbox-item inbox-item--ai" data-ai-inbox-document-id="{escape(document.id)}">
         <div class="inbox-item__context">
-          <p class="system-label">AI-review</p>
+          <p class="system-label">AI-granskning</p>
           <h3>{escape(document.title)}</h3>
           <p class="metadata-provenance">{candidate_text}</p>
         </div>
         <div class="inbox-item__decision">
           <p class="decision-prompt">AI har lämnat förslag som behöver redaktionellt beslut innan de blir del av arkivet.</p>
           <p><a href="{document_href}#ai-review">Granska AI-förslag</a></p>
-          <p><a href="{document_href}">Öppna Document</a></p>
+          <p><a href="{document_href}">Öppna dokument</a></p>
         </div>
       </article>
 """
 
     def _render_ai_candidate_groups(self, candidates: list[KnowledgeObject]) -> str:
         groups = (
-            ("Summary", "Summary"),
-            ("Claims", "Claim"),
-            ("Insights", "Insight"),
-            ("Questions", "Question"),
-            ("Project Suggestions", "ProjectSuggestion"),
+            ("Sammanfattning", "Summary"),
+            ("Påståenden", "Claim"),
+            ("Insikter", "Insight"),
+            ("Frågor", "Question"),
+            ("Projektförslag", "ProjectSuggestion"),
         )
         rendered_groups: list[str] = []
         for heading, semantic_type in groups:
@@ -1455,11 +1490,11 @@ class CaptureApp:
 
     def _format_ai_type_label(self, semantic_type: str) -> str:
         return {
-            "Summary": "Summary",
-            "Claim": "Claim",
-            "Insight": "Insight",
-            "Question": "Question",
-            "ProjectSuggestion": "Project-förslag",
+            "Summary": "Sammanfattning",
+            "Claim": "Påstående",
+            "Insight": "Insikt",
+            "Question": "Fråga",
+            "ProjectSuggestion": "Projektförslag",
         }.get(semantic_type, semantic_type)
 
     def _format_review_status(self, review_status: str) -> str:
@@ -1604,7 +1639,7 @@ class CaptureApp:
         if candidate.document_id:
             document = self.archive.get_document(candidate.document_id)
             document_link = (
-                f"<p class=\"metadata-provenance\">Document: <a href=\"/documents/{escape(document.id)}\">"
+                f"<p class=\"metadata-provenance\">Dokument: <a href=\"/documents/{escape(document.id)}\">"
                 f"{escape(document.title)}</a></p>"
             )
         confidence = (
@@ -1639,7 +1674,7 @@ class CaptureApp:
 
     def _render_reviewed_ai_candidates(self, candidates: list[KnowledgeObject]) -> str:
         if not candidates:
-            return "<p>Inga tidigare AI-reviewbeslut.</p>"
+            return "<p>Inga tidigare AI-granskningsbeslut.</p>"
         return "\n".join(self._render_reviewed_ai_candidate(candidate) for candidate in candidates)
 
     def _render_reviewed_ai_candidate(self, candidate: KnowledgeObject) -> str:
@@ -1683,7 +1718,7 @@ class CaptureApp:
                 project_name = "Okänt projekt"
         return f"""
       <article class="reviewed-ai-candidate" data-ai-reviewed-candidate-id="{escape(candidate.id)}">
-        <h4>Project-förslag - {escape(self._format_review_status(candidate.review_status))}</h4>
+        <h4>Projektförslag - {escape(self._format_review_status(candidate.review_status))}</h4>
         <p>Föreslaget projekt: {escape(project_name)}</p>
         <p class="metadata-provenance">AI-original: {escape(candidate.original_content or candidate.content)}</p>
         <form method="post" action="/documents/{escape(candidate.document_id)}/candidates/{escape(candidate.id)}">
@@ -1694,7 +1729,7 @@ class CaptureApp:
 """
 
     def _render_project_suggestion_candidate(self, candidate: KnowledgeObject) -> str:
-        project_name = "Okänt project"
+        project_name = "Okänt projekt"
         project_id = candidate.project_ids[0] if candidate.project_ids else ""
         if project_id:
             project = self.archive.get_project(project_id)
@@ -1740,7 +1775,7 @@ class CaptureApp:
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
             rendered_candidates = (
-                '<p class="empty-state">Inga AI-förslag väntar på review för dokumentet.</p>'
+                '<p class="empty-state">Inga AI-förslag väntar på granskning för dokumentet.</p>'
             )
         reviewed_candidates = self._render_reviewed_ai_candidates(
             self._reviewed_ai_candidates_for_document(document)
@@ -1763,7 +1798,7 @@ class CaptureApp:
       {rendered_candidates}
       <h3>AI-körningar</h3>
       <ul>{rendered_runs}</ul>
-      <h3>Tidigare reviewbeslut</h3>
+      <h3>Tidigare granskningsbeslut</h3>
       {reviewed_candidates}
     </section>
 """
@@ -1826,7 +1861,7 @@ class CaptureApp:
             )
         text_path = self.archive.extracted_text_file_path(document.id)
         if not text_path.exists():
-            raise AiProviderError("Dokumentets extraherade text saknas i Archive.")
+            raise AiProviderError("Dokumentets extraherade text saknas i arkivet.")
         text = text_path.read_text(encoding="utf-8").strip()
         if not text:
             raise AiProviderError("Dokumentets extraherade text är tom.")
@@ -1893,7 +1928,7 @@ class CaptureApp:
             "Avvisade kandidater": str(reviews.rejected),
             "Väntande kandidater": str(reviews.pending),
             "Uppskjutna kandidater": str(reviews.later),
-            "Behandlade project suggestions": str(reviews.handled),
+            "Behandlade projektförslag": str(reviews.handled),
         }
         rendered_rows = "\n".join(
             f"<tr><th scope=\"row\">{escape(label)}</th><td>{escape(value)}</td></tr>"
@@ -2022,7 +2057,7 @@ class CaptureApp:
             for project in linked_projects
         )
         if not rendered_projects:
-            rendered_projects = "Inga projects"
+            rendered_projects = "Inga projekt"
         original_file = (
             f"<a href=\"/documents/{escape(document.id)}/original\">"
             f"{escape(document.original_filename or 'original.pdf')}</a>"
@@ -2033,12 +2068,12 @@ class CaptureApp:
             title=document.title,
             active_nav="documents",
             body=f"""
-    <p><a href="/documents">Documents</a></p>
+    <p><a href="/documents">Dokument</a></p>
     <h1>{escape(document.title)}</h1>
     {self._render_document_content_sections(notes)}
     {self._render_document_ai_panel(document, candidates, runs)}
     <section aria-labelledby="document-capture">
-      <h2 id="document-capture">Ny capture</h2>
+      <h2 id="document-capture">Ny notering</h2>
       {self._render_capture_form(document=document, show_context=False)}
     </section>
 """,
@@ -2055,11 +2090,11 @@ class CaptureApp:
             self._reviewed_ai_candidates_for_document(document)
         )
         return self._page(
-            title="Tidigare AI-review",
+            title="Tidigare AI-granskning",
             active_nav="documents",
             body=f"""
     <p><a href="/documents/{escape(document.id)}">{escape(document.title)}</a></p>
-    <h1>Tidigare AI-review</h1>
+    <h1>Tidigare AI-granskning</h1>
     {reviewed_candidates}
 """,
         )
@@ -2082,7 +2117,7 @@ class CaptureApp:
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
             rendered_candidates = (
-                '<p class="empty-state">Inga AI-förslag väntar på review för dokumentet.</p>'
+                '<p class="empty-state">Inga AI-förslag väntar på granskning för dokumentet.</p>'
             )
         rendered_runs = "\n".join(
             (
@@ -2096,7 +2131,7 @@ class CaptureApp:
             rendered_runs = "<li>Ingen AI-körning ännu.</li>"
         return f"""
     <section id="ai-review" aria-labelledby="document-ai">
-      <h2 id="document-ai">AI-review</h2>
+      <h2 id="document-ai">AI-granskning</h2>
       <section class="ai-operation" aria-labelledby="ai-operation">
         <h3 id="ai-operation">AI-operation</h3>
         {ai_action}
@@ -2107,16 +2142,16 @@ class CaptureApp:
       </section>
       <h3>Förslag att granska</h3>
       {rendered_candidates}
-      <p><a href="/documents/{escape(document.id)}/review-history">Tidigare AI-review</a></p>
+      <p><a href="/documents/{escape(document.id)}/review-history">Tidigare AI-granskning</a></p>
     </section>
 """
 
     def _render_document_content_sections(self, notes: list[KnowledgeObject]) -> str:
         groups = (
-            ("Summary", "Summary"),
-            ("Claims", "Claim"),
-            ("Insights", "Insight"),
-            ("Questions", "Question"),
+            ("Sammanfattning", "Summary"),
+            ("Påståenden", "Claim"),
+            ("Insikter", "Insight"),
+            ("Frågor", "Question"),
         )
         rendered_sections: list[str] = []
         grouped_ids: set[str] = set()
@@ -2128,7 +2163,7 @@ class CaptureApp:
             )
         captures = [note for note in notes if note.id not in grouped_ids]
         rendered_sections.append(
-            self._render_document_note_section("Captures", "captures", captures)
+            self._render_document_note_section("Noteringar", "captures", captures)
         )
         return "\n".join(rendered_sections)
 
@@ -2347,6 +2382,7 @@ class CaptureApp:
       color: var(--color-cinnabar);
       display: block;
       font-family: var(--font-devis);
+      font-size: 0.95rem;
       font-weight: 400;
       letter-spacing: 0.01em;
       line-height: 1.2;
@@ -2788,8 +2824,8 @@ class CaptureApp:
 
     .ai-suggestion {
       font-family: var(--font-reading);
-      font-size: var(--step-1);
-      line-height: 1.55;
+      font-size: var(--step-0);
+      line-height: 1.5;
     }
 
     .project-list__item {
@@ -3080,9 +3116,9 @@ class CaptureApp:
         capture_current = ' aria-current="page"' if active_nav == "capture" else ""
         primary_nav = "\n      ".join(
             (
-                self._nav_link("inbox", "/inbox", "Inbox", "◇", active_nav),
-                self._nav_link("documents", "/documents", "Documents", "□", active_nav),
-                self._nav_link("projects", "/projects", "Projects", "△", active_nav),
+                self._nav_link("inbox", "/inbox", "Inkorg", "◇", active_nav),
+                self._nav_link("documents", "/documents", "Dokument", "□", active_nav),
+                self._nav_link("projects", "/projects", "Projekt", "△", active_nav),
             )
         )
         return f"""<!doctype html>
@@ -3098,7 +3134,7 @@ class CaptureApp:
 <body>
   <div class="app-shell">
     <header class="identity-bar">
-      <a class="identity-lockup" href="/inbox" aria-label="Dokumentverkstad Inbox">
+      <a class="identity-lockup" href="/inbox" aria-label="Dokumentverkstad inkorg">
 {self._identity_mark()}
         <span class="identity-text">
           <span class="identity-title">DOKUMENTVERKSTAD</span>
@@ -3106,7 +3142,7 @@ class CaptureApp:
         </span>
       </a>
       <div class="identity-actions" aria-label="Primära handlingar">
-        <a class="identity-action{capture_active}" href="/capture"{capture_current}>+ Capture</a>
+        <a class="identity-action{capture_active}" href="/capture"{capture_current}>+ Notering</a>
       </div>
     </header>
     <nav class="global-nav" aria-label="Huvudnavigation">
@@ -3250,9 +3286,9 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                     return
                 document = result.document
                 if document and result.created:
-                    message = "Dokumentet har lagts till i Inbox."
+                    message = "Dokumentet har lagts till i inkorgen."
                 elif document:
-                    message = "PDF-filen finns redan i Archive."
+                    message = "PDF-filen finns redan i arkivet."
                 else:
                     message = "PDF-filen kunde inte importeras."
                 self._send_html(app.render_upload(message=message))
@@ -3575,5 +3611,5 @@ def main(config_path: str | None = None, password: str | None = None) -> None:
         log=runtime_log_sink(config.runtime_root),
     )
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
-    print(f"Dokumentverkstad Capture körs på http://{config.host}:{config.port}/")
+    print(f"Dokumentverkstad körs på http://{config.host}:{config.port}/")
     server.serve_forever()

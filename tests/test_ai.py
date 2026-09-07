@@ -363,7 +363,7 @@ class AiTests(unittest.TestCase):
 
             html = app.render_inbox()
 
-            self.assertIn("Inbox", html)
+            self.assertIn("Inkorg", html)
             self.assertNotIn("OPENAI_API_KEY", html)
             self.assertNotIn("api_key", html)
 
@@ -588,7 +588,7 @@ class AiTests(unittest.TestCase):
 
             html = app.render_inbox()
 
-            self.assertIn("AI-review", html)
+            self.assertIn("AI-granskning", html)
             self.assertIn("väntar", html)
             self.assertIn(f"/documents/{document.id}", html)
             self.assertNotIn("Proveniens: AI", html)
