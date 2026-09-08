@@ -1084,6 +1084,39 @@ class CaptureAppTests(unittest.TestCase):
             self.assertEqual(len(runs), 1)
             self.assertEqual(runs[0].status, "planned")
 
+    def test_core_get_views_log_render_timings(self) -> None:
+        with workspace_tempdir() as tmp:
+            messages: list[str] = []
+            root = Path(tmp)
+            config = _web_config(root)
+            archive = Archive(config.archive_root)
+            pdf_path = root / "rapport.pdf"
+            write_minimal_pdf(pdf_path, title="Timing rapport", text="Text.")
+            document = archive.register_document_with_original_pdf(
+                pdf_path,
+                title="Timing rapport",
+                text="Text.",
+                checksum_sha256=calculate_checksum(pdf_path),
+            )
+            app = CaptureApp(
+                archive,
+                config=config,
+                log=messages.append,
+                render_step_threshold_seconds=0,
+            )
+
+            app.render_inbox()
+            app.render_documents()
+            app.render_document(document.id)
+
+            joined = "\n".join(messages)
+            self.assertIn("render total view=inbox", joined)
+            self.assertIn("render step view=inbox step=list_knowledge_objects", joined)
+            self.assertIn("render total view=documents", joined)
+            self.assertIn("render step view=documents step=document_list_items", joined)
+            self.assertIn("render total view=document", joined)
+            self.assertIn("render step view=document step=list_knowledge_objects", joined)
+
     def test_existing_project_link_hides_project_suggestion_and_not_duplicate_link(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")

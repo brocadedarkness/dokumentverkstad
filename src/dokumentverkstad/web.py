@@ -56,6 +56,12 @@ class DocumentListItem:
     capture_count: int
 
 
+@dataclass(frozen=True)
+class AiCandidateVisibilityContext:
+    documents: dict[str, Document]
+    project_ids: set[str]
+
+
 class CaptureApp:
     def __init__(
         self,
@@ -64,6 +70,7 @@ class CaptureApp:
         ai_provider: AiProvider | None = None,
         log: Callable[[str], None] | None = None,
         slow_request_threshold_seconds: float = 0.5,
+        render_step_threshold_seconds: float = 0.05,
     ):
         self.archive = archive
         self.config = config
@@ -86,6 +93,7 @@ class CaptureApp:
         )
         self.log = log
         self.slow_request_threshold_seconds = slow_request_threshold_seconds
+        self.render_step_threshold_seconds = render_step_threshold_seconds
         self.archive.initialize()
 
     def render_capture(
@@ -115,13 +123,42 @@ class CaptureApp:
         )
 
     def render_inbox(self) -> str:
-        documents = self.archive.list_inbox_documents()
-        candidates = self._visible_ai_candidates_for_inbox()
+        started = perf_counter()
+        all_documents = self._timed_render_step(
+            "inbox",
+            "list_documents",
+            self.archive.list_documents,
+        )
+        documents = [
+            document
+            for document in all_documents
+            if document.inbox_status in {"new", "later"}
+        ]
+        documents.sort(key=lambda item: item.updated_at, reverse=True)
+        knowledge_objects = self._timed_render_step(
+            "inbox",
+            "list_knowledge_objects",
+            self.archive.list_knowledge_objects,
+        )
+        projects = self._timed_render_step(
+            "inbox",
+            "list_projects",
+            self.archive.list_projects,
+        )
+        visibility = AiCandidateVisibilityContext(
+            documents={document.id: document for document in all_documents},
+            project_ids={project.id for project in projects},
+        )
+        candidates = self._visible_ai_candidates_for_inbox(
+            knowledge_objects, visibility
+        )
         queue_count = len(documents) + len(candidates)
         rendered_documents = "\n".join(
-            self._render_inbox_document(document) for document in documents
+            self._render_inbox_document(document, projects) for document in documents
         )
-        rendered_candidates = self._render_ai_inbox_candidates(candidates)
+        rendered_candidates = self._render_ai_inbox_candidates(
+            candidates, visibility.documents
+        )
         empty_notice = (
             '<p class="empty-state">Inget väntar på behandling.</p>'
             if not documents and not candidates
@@ -151,7 +188,7 @@ class CaptureApp:
     </div>
 """
 
-        return self._page(
+        html = self._page(
             title="Inkorg",
             active_nav="inbox",
             context=context,
@@ -172,6 +209,8 @@ class CaptureApp:
     </section>
 """,
         )
+        self._log_render_total("inbox", started)
+        return html
 
     def render_upload(self, message: str = "", error: str = "") -> str:
         feedback = ""
@@ -337,9 +376,18 @@ class CaptureApp:
         ai_status: str = "",
         project_id: str = "",
     ) -> str:
-        projects = self.archive.list_projects()
+        started = perf_counter()
+        projects = self._timed_render_step(
+            "documents",
+            "list_projects",
+            self.archive.list_projects,
+        )
         project_names = {project.id: project.name for project in projects}
-        items = self._document_list_items()
+        items = self._timed_render_step(
+            "documents",
+            "document_list_items",
+            self._document_list_items,
+        )
         total_count = len(items)
         items = self._filter_document_list_items(
             items,
@@ -366,7 +414,7 @@ class CaptureApp:
             for project in projects
         )
 
-        return self._page(
+        html = self._page(
             title="Dokument",
             active_nav="documents",
             body=f"""
@@ -418,6 +466,8 @@ class CaptureApp:
     </div>
 """,
         )
+        self._log_render_total("documents", started)
+        return html
 
     def render_new_document(self) -> str:
         return self._page(
@@ -570,15 +620,41 @@ class CaptureApp:
         return f"{count} egna noteringar"
 
     def render_document(self, document_id: str) -> str:
-        document = self.archive.get_document(document_id)
-        notes = self.archive.list_knowledge_objects_for_document(document.id)
-        candidates = self._visible_ai_candidates_for_document(document)
-        runs = self.archive.list_ai_runs_for_document(document.id)
-        linked_projects = [
-            project
-            for project in self.archive.list_projects()
-            if project.id in document.project_ids
+        started = perf_counter()
+        document = self._timed_render_step(
+            "document",
+            "get_document",
+            lambda: self.archive.get_document(document_id),
+        )
+        knowledge_objects = self._timed_render_step(
+            "document",
+            "list_knowledge_objects",
+            self.archive.list_knowledge_objects,
+        )
+        projects = self._timed_render_step(
+            "document",
+            "list_projects",
+            self.archive.list_projects,
+        )
+        runs = self._timed_render_step(
+            "document",
+            "list_ai_runs_for_document",
+            lambda: self.archive.list_ai_runs_for_document(document.id),
+        )
+        notes = [
+            item
+            for item in knowledge_objects
+            if item.document_id == document.id and item.review_status == "accepted"
         ]
+        notes.sort(key=lambda item: item.created_at, reverse=True)
+        visibility = AiCandidateVisibilityContext(
+            documents={document.id: document},
+            project_ids={project.id for project in projects},
+        )
+        candidates = self._visible_ai_candidates_for_document(
+            document, knowledge_objects, visibility
+        )
+        linked_projects = [project for project in projects if project.id in document.project_ids]
         rendered_projects = ", ".join(
             f"<a href=\"/projects/{escape(project.id)}\">{escape(project.name)}</a>"
             for project in linked_projects
@@ -591,7 +667,7 @@ class CaptureApp:
             if document.has_original_file
             else "Ingen digital originalfil"
         )
-        return self._page(
+        html = self._page(
             title=document.title,
             active_nav="documents",
             body=f"""
@@ -1406,8 +1482,10 @@ class CaptureApp:
     </section>
 """
 
-    def _render_inbox_document(self, document: Document) -> str:
-        projects = self.archive.list_projects()
+    def _render_inbox_document(
+        self, document: Document, projects: list[Project] | None = None
+    ) -> str:
+        projects = projects if projects is not None else self.archive.list_projects()
         project_options = "\n".join(
             (
                 "<label>"
@@ -1469,8 +1547,12 @@ class CaptureApp:
       </article>
 """
 
-    def _render_ai_inbox_candidates(self, candidates: list[KnowledgeObject]) -> str:
-        grouped = self._group_ai_candidates_by_document(candidates)
+    def _render_ai_inbox_candidates(
+        self,
+        candidates: list[KnowledgeObject],
+        documents_by_id: dict[str, Document] | None = None,
+    ) -> str:
+        grouped = self._group_ai_candidates_by_document(candidates, documents_by_id)
         if not grouped:
             return ""
         summary = (
@@ -1483,17 +1565,24 @@ class CaptureApp:
         return f"{summary}\n{rendered_items}"
 
     def _group_ai_candidates_by_document(
-        self, candidates: list[KnowledgeObject]
+        self,
+        candidates: list[KnowledgeObject],
+        documents_by_id: dict[str, Document] | None = None,
     ) -> list[tuple[Document, int]]:
         counts: dict[str, int] = {}
         for candidate in candidates:
             if not candidate.document_id:
                 continue
             counts[candidate.document_id] = counts.get(candidate.document_id, 0) + 1
-        documents = [
-            (self.archive.get_document(document_id), pending_count)
-            for document_id, pending_count in counts.items()
-        ]
+        documents = []
+        for document_id, pending_count in counts.items():
+            document = (
+                documents_by_id.get(document_id)
+                if documents_by_id is not None
+                else self.archive.get_document(document_id)
+            )
+            if document is not None:
+                documents.append((document, pending_count))
         documents.sort(key=lambda item: item[0].title.casefold())
         return documents
 
@@ -1572,21 +1661,39 @@ class CaptureApp:
             "candidate": "Ogranskad",
         }.get(review_status, review_status)
 
-    def _visible_ai_candidates_for_inbox(self) -> list[KnowledgeObject]:
+    def _visible_ai_candidates_for_inbox(
+        self,
+        knowledge_objects: list[KnowledgeObject] | None = None,
+        visibility: AiCandidateVisibilityContext | None = None,
+    ) -> list[KnowledgeObject]:
+        candidates = [
+            item
+            for item in (
+                knowledge_objects
+                if knowledge_objects is not None
+                else self.archive.list_recent_knowledge_objects(limit=10_000)
+            )
+            if item.creator == "ai" and item.review_status in {"candidate", "later"}
+        ]
+        candidates.sort(key=lambda item: item.updated_at, reverse=True)
         return [
             candidate
-            for candidate in self.archive.list_ai_candidates_for_inbox()
-            if self._ai_candidate_should_be_visible(candidate)
+            for candidate in candidates
+            if self._ai_candidate_should_be_visible(candidate, visibility=visibility)
         ]
 
     def _visible_ai_candidates_for_document(
-        self, document: Document
+        self,
+        document: Document,
+        knowledge_objects: list[KnowledgeObject] | None = None,
+        visibility: AiCandidateVisibilityContext | None = None,
     ) -> list[KnowledgeObject]:
         return [
             candidate
-            for candidate in self.archive.list_ai_candidates_for_inbox()
+            for candidate in self._visible_ai_candidates_for_inbox(
+                knowledge_objects, visibility
+            )
             if candidate.document_id == document.id
-            and self._ai_candidate_should_be_visible(candidate, document=document)
         ]
 
     def _reviewed_ai_candidates_for_document(
@@ -1603,16 +1710,27 @@ class CaptureApp:
         return candidates
 
     def _ai_candidate_should_be_visible(
-        self, candidate: KnowledgeObject, document: Document | None = None
+        self,
+        candidate: KnowledgeObject,
+        document: Document | None = None,
+        visibility: AiCandidateVisibilityContext | None = None,
     ) -> bool:
         if candidate.semantic_type != "ProjectSuggestion":
             return True
         if not candidate.project_ids:
             return False
+        if document is None and visibility is not None and candidate.document_id:
+            document = visibility.documents.get(candidate.document_id)
         if document is None and candidate.document_id:
             document = self.archive.get_document(candidate.document_id)
         if document is None:
             return False
+        if visibility is not None:
+            if any(project_id not in visibility.project_ids for project_id in candidate.project_ids):
+                return False
+            return not any(
+                project_id in document.project_ids for project_id in candidate.project_ids
+            )
         for project_id in candidate.project_ids:
             try:
                 self.archive.get_project(project_id)
@@ -2110,15 +2228,41 @@ class CaptureApp:
 """
 
     def render_document(self, document_id: str) -> str:
-        document = self.archive.get_document(document_id)
-        notes = self.archive.list_knowledge_objects_for_document(document.id)
-        candidates = self._visible_ai_candidates_for_document(document)
-        runs = self.archive.list_ai_runs_for_document(document.id)
-        linked_projects = [
-            project
-            for project in self.archive.list_projects()
-            if project.id in document.project_ids
+        started = perf_counter()
+        document = self._timed_render_step(
+            "document",
+            "get_document",
+            lambda: self.archive.get_document(document_id),
+        )
+        knowledge_objects = self._timed_render_step(
+            "document",
+            "list_knowledge_objects",
+            self.archive.list_knowledge_objects,
+        )
+        projects = self._timed_render_step(
+            "document",
+            "list_projects",
+            self.archive.list_projects,
+        )
+        runs = self._timed_render_step(
+            "document",
+            "list_ai_runs_for_document",
+            lambda: self.archive.list_ai_runs_for_document(document.id),
+        )
+        notes = [
+            item
+            for item in knowledge_objects
+            if item.document_id == document.id and item.review_status == "accepted"
         ]
+        notes.sort(key=lambda item: item.created_at, reverse=True)
+        visibility = AiCandidateVisibilityContext(
+            documents={document.id: document},
+            project_ids={project.id for project in projects},
+        )
+        candidates = self._visible_ai_candidates_for_document(
+            document, knowledge_objects, visibility
+        )
+        linked_projects = [project for project in projects if project.id in document.project_ids]
         rendered_projects = ", ".join(
             f"<a href=\"/projects/{escape(project.id)}\">{escape(project.name)}</a>"
             for project in linked_projects
@@ -2131,7 +2275,7 @@ class CaptureApp:
             if document.has_original_file
             else "Ingen digital originalfil"
         )
-        return self._page(
+        html = self._page(
             title=document.title,
             active_nav="documents",
             body=f"""
@@ -2150,6 +2294,10 @@ class CaptureApp:
                 rendered_projects=rendered_projects,
             ),
         )
+        self._log_render_total("document", started)
+        return html
+        self._log_render_total("document", started)
+        return html
 
     def render_review_history(self, document_id: str) -> str:
         document = self.archive.get_document(document_id)
@@ -2297,6 +2445,20 @@ class CaptureApp:
     def _log(self, message: str) -> None:
         if self.log:
             self.log(message)
+
+    def _timed_render_step(self, view: str, step: str, fn: Callable[[], object]):
+        started = perf_counter()
+        result = fn()
+        elapsed = perf_counter() - started
+        if elapsed >= self.render_step_threshold_seconds:
+            self._log(
+                f"render step view={view} step={step} duration_ms={elapsed * 1000:.1f}"
+            )
+        return result
+
+    def _log_render_total(self, view: str, started: float) -> None:
+        elapsed = perf_counter() - started
+        self._log(f"render total view={view} duration_ms={elapsed * 1000:.1f}")
 
     def _nav_link(self, key: str, href: str, label: str, mark: str, active_nav: str) -> str:
         active_class = " is-active" if active_nav == key else ""
@@ -3550,6 +3712,14 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
             self._response_status = 0
             try:
                 handler()
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+                parsed = urlparse(self.path)
+                app._log(
+                    "client disconnected "
+                    f"method={self.command} "
+                    f"path={parsed.path} "
+                    f"status={self._response_status or 'unknown'}"
+                )
             finally:
                 elapsed = perf_counter() - started
                 if elapsed >= app.slow_request_threshold_seconds:
