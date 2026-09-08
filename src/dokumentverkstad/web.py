@@ -3872,7 +3872,11 @@ def unlock_configured_secrets(config: AppConfig, password: str | None = None) ->
     unlock_encrypted_secrets(config.encrypted_secrets_path, entered_password)
 
 
-def main(config_path: str | None = None, password: str | None = None) -> None:
+def main(
+    config_path: str | None = None,
+    password: str | None = None,
+    start_worker: bool = True,
+) -> None:
     from .worker import BackgroundWorker
 
     config = load_config(config_path)
@@ -3887,18 +3891,21 @@ def main(config_path: str | None = None, password: str | None = None) -> None:
         log=runtime_log_sink(config.runtime_root),
     )
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
-    worker = BackgroundWorker(
-        Archive(config.archive_root),
-        config,
-        run_next_ai_job=app.run_next_planned_ai_analysis,
-        recover_ai_jobs=app.recover_interrupted_ai_runs,
-        log=app._log,
-    )
-    worker.start()
+    worker = None
+    if start_worker:
+        worker = BackgroundWorker(
+            Archive(config.archive_root),
+            config,
+            run_next_ai_job=app.run_next_planned_ai_analysis,
+            recover_ai_jobs=app.recover_interrupted_ai_runs,
+            log=app._log,
+        )
+        worker.start()
     print(f"Dokumentverkstad körs på http://{config.host}:{config.port}/")
     try:
         server.serve_forever()
     finally:
-        worker.stop()
+        if worker is not None:
+            worker.stop()
         if hasattr(server, "server_close"):
             server.server_close()

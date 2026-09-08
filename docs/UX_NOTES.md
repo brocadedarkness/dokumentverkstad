@@ -783,3 +783,11 @@ Projects används som användarcentrerade sammanhang snarare än som en konsekve
 ### AI review
 
 När ett dokument gått igenom en AI-review och hamnat i inboxen, behöver inboxen också innehålla en länk till dokumentet.
+
+# 2026-09-08
+
+## Prestanda
+
+/documents kan under vissa lokala körningar ta ~30 s. Flaskhalsen är document_list_items, inte projektlistning eller generell request overhead.
+
+## 

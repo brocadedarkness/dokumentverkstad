@@ -31,12 +31,19 @@ class ConfigurationError(Exception):
 def load_config(config_path: str | Path | None = None) -> AppConfig:
     path = _resolve_config_path(config_path)
     data = _read_config(path) if path else {}
+    base = path.parent if path else Path.cwd()
 
-    archive_root = Path(data.get("archive_root", ".dokumentverkstad/archive"))
-    runtime_root = Path(data.get("runtime_root", ".dokumentverkstad/runtime"))
-    ingest_source = Path(data.get("ingest_source", ".dokumentverkstad/ingest"))
-    host = str(data.get("host", "127.0.0.1"))
-    port = int(data.get("port", 8000))
+    archive_root = _path_setting(
+        data, "archive_root", "DOKUMENTVERKSTAD_ARCHIVE_ROOT", ".dokumentverkstad/archive", base
+    )
+    runtime_root = _path_setting(
+        data, "runtime_root", "DOKUMENTVERKSTAD_RUNTIME_ROOT", ".dokumentverkstad/runtime", base
+    )
+    ingest_source = _path_setting(
+        data, "ingest_source", "DOKUMENTVERKSTAD_INGEST_SOURCE", ".dokumentverkstad/ingest", base
+    )
+    host = str(_setting(data, "host", "DOKUMENTVERKSTAD_HOST", "127.0.0.1"))
+    port = int(_setting(data, "port", "DOKUMENTVERKSTAD_PORT", 8000))
     ai_provider = str(data.get("ai_provider", "openai"))
     ai_model = str(data.get("ai_model", "gpt-5.6-luna"))
     ai_max_output_tokens = int(data.get("ai_max_output_tokens", 6000))
@@ -44,16 +51,25 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
     ai_currency = str(data.get("ai_currency", "USD"))
     ai_cost_limit = float(data.get("ai_cost_limit", 0.0))
     upload_max_bytes = int(data.get("upload_max_bytes", 250 * 1024 * 1024))
-    secrets_path = Path(data.get("secrets_path", ".dokumentverkstad/secrets.toml"))
-    encrypted_secrets_path = Path(
-        data.get("encrypted_secrets_path", ".dokumentverkstad/secrets.enc")
+    secrets_path = _path_setting(
+        data,
+        "secrets_path",
+        "DOKUMENTVERKSTAD_SECRETS_PATH",
+        ".dokumentverkstad/secrets.toml",
+        base,
+    )
+    encrypted_secrets_path = _path_setting(
+        data,
+        "encrypted_secrets_path",
+        "DOKUMENTVERKSTAD_ENCRYPTED_SECRETS_PATH",
+        ".dokumentverkstad/secrets.enc",
+        base,
     )
 
-    base = path.parent if path else Path.cwd()
     return AppConfig(
-        archive_root=_resolve_path(base, archive_root),
-        runtime_root=_resolve_path(base, runtime_root),
-        ingest_source=_resolve_path(base, ingest_source),
+        archive_root=archive_root,
+        runtime_root=runtime_root,
+        ingest_source=ingest_source,
         host=host,
         port=port,
         ai_provider=ai_provider,
@@ -63,8 +79,8 @@ def load_config(config_path: str | Path | None = None) -> AppConfig:
         ai_currency=ai_currency,
         ai_cost_limit=ai_cost_limit,
         upload_max_bytes=upload_max_bytes,
-        secrets_path=_resolve_path(base, secrets_path),
-        encrypted_secrets_path=_resolve_path(base, encrypted_secrets_path),
+        secrets_path=secrets_path,
+        encrypted_secrets_path=encrypted_secrets_path,
     )
 
 
@@ -146,6 +162,28 @@ def _resolve_path(base: Path, path: Path) -> Path:
     if path.is_absolute():
         return path
     return (base / path).resolve()
+
+
+def _setting(
+    data: dict[str, object], key: str, env_name: str, default: object
+) -> object:
+    value = os.environ.get(env_name)
+    if value is not None and value.strip():
+        return value
+    return data.get(key, default)
+
+
+def _path_setting(
+    data: dict[str, object],
+    key: str,
+    env_name: str,
+    default: str,
+    config_base: Path,
+) -> Path:
+    value = os.environ.get(env_name)
+    if value is not None and value.strip():
+        return Path(value).expanduser().resolve()
+    return _resolve_path(config_base, Path(data.get(key, default)))
 
 
 def _directory_error_message(path: Path, parameter_name: str) -> str:

@@ -68,6 +68,49 @@ class ConfigTests(unittest.TestCase):
 
             self.assertEqual(config.archive_root, (Path(tmp) / "archive").resolve())
 
+    def test_environment_overrides_server_paths_and_network_settings(self) -> None:
+        names = {
+            "DOKUMENTVERKSTAD_CONFIG": None,
+            "DOKUMENTVERKSTAD_ARCHIVE_ROOT": None,
+            "DOKUMENTVERKSTAD_RUNTIME_ROOT": None,
+            "DOKUMENTVERKSTAD_INGEST_SOURCE": None,
+            "DOKUMENTVERKSTAD_HOST": None,
+            "DOKUMENTVERKSTAD_PORT": None,
+            "DOKUMENTVERKSTAD_SECRETS_PATH": None,
+            "DOKUMENTVERKSTAD_ENCRYPTED_SECRETS_PATH": None,
+        }
+        previous = {name: os.environ.get(name) for name in names}
+        try:
+            with workspace_tempdir() as tmp:
+                root = Path(tmp)
+                os.environ["DOKUMENTVERKSTAD_ARCHIVE_ROOT"] = str(root / "srv-archive")
+                os.environ["DOKUMENTVERKSTAD_RUNTIME_ROOT"] = str(root / "srv-runtime")
+                os.environ["DOKUMENTVERKSTAD_INGEST_SOURCE"] = str(root / "srv-ingest")
+                os.environ["DOKUMENTVERKSTAD_HOST"] = "0.0.0.0"
+                os.environ["DOKUMENTVERKSTAD_PORT"] = "8765"
+                os.environ["DOKUMENTVERKSTAD_SECRETS_PATH"] = str(root / "legacy.toml")
+                os.environ["DOKUMENTVERKSTAD_ENCRYPTED_SECRETS_PATH"] = str(
+                    root / "secrets.enc"
+                )
+
+                config = load_config()
+
+                self.assertEqual(config.archive_root, (root / "srv-archive").resolve())
+                self.assertEqual(config.runtime_root, (root / "srv-runtime").resolve())
+                self.assertEqual(config.ingest_source, (root / "srv-ingest").resolve())
+                self.assertEqual(config.host, "0.0.0.0")
+                self.assertEqual(config.port, 8765)
+                self.assertEqual(config.secrets_path, (root / "legacy.toml").resolve())
+                self.assertEqual(
+                    config.encrypted_secrets_path, (root / "secrets.enc").resolve()
+                )
+        finally:
+            for name, value in previous.items():
+                if value is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = value
+
     def test_defaults_are_local_to_current_working_directory(self) -> None:
         previous = os.environ.pop("DOKUMENTVERKSTAD_CONFIG", None)
         try:

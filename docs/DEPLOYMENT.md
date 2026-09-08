@@ -40,6 +40,101 @@ Målet är att utvecklingsmiljön och huvudservern ska använda samma kodbas. Sk
 
 ---
 
+# Linux/VPS-readiness
+
+Syfte: första förberedelse för drift på en liten Linux-VPS.
+
+Detta är inte en komplett serverdeployment. Ingen VPS, DNS, HTTPS,
+reverse proxy, systemd-unit, Docker eller autentisering definieras här.
+
+Rekommenderad separation mellan kod och persistent data:
+
+```text
+/opt/dokumentverkstad/
+  applikationskod
+  virtuell Python-miljö
+
+/var/lib/dokumentverkstad/
+  archive/
+  runtime/
+  ingest/
+  secrets.enc        # valfri krypterad secrets-fil
+```
+
+Exempel på konfiguration:
+
+```toml
+archive_root = "/var/lib/dokumentverkstad/archive"
+runtime_root = "/var/lib/dokumentverkstad/runtime"
+ingest_source = "/var/lib/dokumentverkstad/ingest"
+host = "127.0.0.1"
+port = 8000
+encrypted_secrets_path = "/var/lib/dokumentverkstad/secrets.enc"
+```
+
+Samma värden kan anges med environment variables, vilket är praktiskt när
+processer startas av ett externt service-lager:
+
+```sh
+export DOKUMENTVERKSTAD_CONFIG=/opt/dokumentverkstad/dokumentverkstad.toml
+export DOKUMENTVERKSTAD_ARCHIVE_ROOT=/var/lib/dokumentverkstad/archive
+export DOKUMENTVERKSTAD_RUNTIME_ROOT=/var/lib/dokumentverkstad/runtime
+export DOKUMENTVERKSTAD_INGEST_SOURCE=/var/lib/dokumentverkstad/ingest
+export DOKUMENTVERKSTAD_HOST=127.0.0.1
+export DOKUMENTVERKSTAD_PORT=8000
+export DOKUMENTVERKSTAD_ENCRYPTED_SECRETS_PATH=/var/lib/dokumentverkstad/secrets.enc
+```
+
+För serverdrift bör `OPENAI_API_KEY` i första hand komma från environment om
+AI används:
+
+```sh
+export OPENAI_API_KEY=...
+```
+
+Det gör att API-nyckeln inte behöver ligga i repo eller Archive. Krypterade
+secrets kan fortfarande användas när processen startas interaktivt, men en
+unattended serverprocess bör inte kräva manuell upplåsning efter varje restart.
+
+Förbered katalogerna:
+
+```sh
+sudo mkdir -p /opt/dokumentverkstad /var/lib/dokumentverkstad
+sudo chown -R dokumentverkstad:dokumentverkstad /var/lib/dokumentverkstad
+```
+
+När koden är installerad och Python-miljön aktiverad kan web och worker köras
+som två separata långlivade processer:
+
+```sh
+python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml run --no-worker
+```
+
+```sh
+python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml worker
+```
+
+`run --no-worker` startar endast webbservern. `worker` processar ingest och
+planerade AI-körningar. Båda processerna använder samma Archive, Runtime och
+ingest source via config/environment.
+
+För enkel lokal kontroll:
+
+```sh
+python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml status
+```
+
+Loggning sker till:
+
+```text
+/var/lib/dokumentverkstad/runtime/logs/dokumentverkstad.log
+```
+
+Loggen ligger i Runtime och är diagnostisk. Den ska inte användas som
+auktoritativ datakälla.
+
+---
+
 # Huvudserver
 
 * Planerad miljö:

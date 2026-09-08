@@ -37,8 +37,10 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="dokumentverkstad")
     parser.add_argument("--config", help="Path to dokumentverkstad.toml")
     subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("run")
-    subparsers.add_parser("start")
+    run_parser = subparsers.add_parser("run")
+    run_parser.add_argument("--no-worker", action="store_true")
+    start_parser = subparsers.add_parser("start")
+    start_parser.add_argument("--no-worker", action="store_true")
 
     init_parser = subparsers.add_parser("init")
     init_parser.add_argument("--force", action="store_true")
@@ -69,7 +71,7 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         if command in {"run", "start"}:
-            run_web(args.config)
+            run_web(args.config, start_worker=not args.no_worker)
             return
 
         if command == "init":

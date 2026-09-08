@@ -317,6 +317,39 @@ class CliTests(unittest.TestCase):
 
             self.assertTrue(FakeServer.started)
 
+    def test_run_can_start_web_without_embedded_worker(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config_path = root / "dokumentverkstad.toml"
+            main(["--config", str(config_path), "init"])
+            calls: list[tuple[str | None, bool]] = []
+
+            def fake_run_web(config_path_arg: str | None, start_worker: bool = True) -> None:
+                calls.append((config_path_arg, start_worker))
+
+            with patch("dokumentverkstad.cli.run_web", side_effect=fake_run_web):
+                main(["--config", str(config_path), "run", "--no-worker"])
+
+            self.assertEqual(calls, [(str(config_path), False)])
+
+    def test_worker_command_starts_worker_loop(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config_path = root / "dokumentverkstad.toml"
+            main(["--config", str(config_path), "init"])
+            calls: list[str] = []
+
+            def fake_worker_loop(**kwargs):  # type: ignore[no-untyped-def]
+                calls.append(str(kwargs["config"].archive_root))
+
+            with patch("dokumentverkstad.cli.run_worker_loop", side_effect=fake_worker_loop):
+                main(["--config", str(config_path), "worker"])
+
+            self.assertEqual(
+                calls,
+                [str((root / ".dokumentverkstad" / "archive").resolve())],
+            )
+
     def test_start_with_wrong_password_does_not_start_server(self) -> None:
         class FailingIfCreatedServer:
             def __init__(self, address, handler):  # type: ignore[no-untyped-def]
