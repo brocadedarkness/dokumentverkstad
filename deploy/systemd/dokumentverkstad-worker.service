@@ -1,0 +1,22 @@
+[Unit]
+Description=Dokumentverkstad worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=dokumentverkstad
+Group=dokumentverkstad
+WorkingDirectory=/opt/dokumentverkstad
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/dokumentverkstad/dokumentverkstad.env
+ExecStart=/opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml worker
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/dokumentverkstad
+
+[Install]
+WantedBy=multi-user.target

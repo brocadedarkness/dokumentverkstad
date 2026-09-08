@@ -135,6 +135,242 @@ auktoritativ datakälla.
 
 ---
 
+# systemd på verifierad Linux-VPS
+
+Syfte: köra Dokumentverkstad som två separata långlivade tjänster på den
+verifierade VPS-layouten.
+
+Verifierad layout:
+
+```text
+/opt/dokumentverkstad/
+  git-repo
+  .venv/
+  dokumentverkstad.toml
+
+/var/lib/dokumentverkstad/
+  archive/
+  runtime/
+  ingest/
+```
+
+Verifierad config:
+
+```toml
+archive_root = "/var/lib/dokumentverkstad/archive"
+runtime_root = "/var/lib/dokumentverkstad/runtime"
+ingest_source = "/var/lib/dokumentverkstad/ingest"
+host = "127.0.0.1"
+port = 8000
+```
+
+Dokumentverkstad ska fortsatt bara lyssna på `127.0.0.1:8000`. Exponera inte
+port 8000 direkt mot internet.
+
+## Unit-filer
+
+Unit-filerna finns i repot:
+
+```text
+deploy/systemd/dokumentverkstad-web.service
+deploy/systemd/dokumentverkstad-worker.service
+```
+
+Installera dem på servern:
+
+```sh
+sudo cp /opt/dokumentverkstad/deploy/systemd/dokumentverkstad-web.service /etc/systemd/system/
+sudo cp /opt/dokumentverkstad/deploy/systemd/dokumentverkstad-worker.service /etc/systemd/system/
+```
+
+Webbtjänsten kör:
+
+```text
+/opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml run --no-worker
+```
+
+Workertjänsten kör:
+
+```text
+/opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml worker
+```
+
+Båda tjänsterna körs som användaren och gruppen `dokumentverkstad`, använder
+`WorkingDirectory=/opt/dokumentverkstad`, restartar vid oväntad krasch och
+skriver stdout/stderr till journald.
+
+## Environment och secrets
+
+Secrets ska inte hårdkodas i unit-filer och ska inte checkas in.
+
+Skapa en environment-fil om AI används eller om driftvärden behöver sättas via
+environment:
+
+```sh
+sudo install -d -o root -g dokumentverkstad -m 750 /etc/dokumentverkstad
+sudo cp /opt/dokumentverkstad/deploy/systemd/dokumentverkstad.env.example /etc/dokumentverkstad/dokumentverkstad.env
+sudo chown root:dokumentverkstad /etc/dokumentverkstad/dokumentverkstad.env
+sudo chmod 640 /etc/dokumentverkstad/dokumentverkstad.env
+sudo editor /etc/dokumentverkstad/dokumentverkstad.env
+```
+
+Exempel:
+
+```sh
+OPENAI_API_KEY=...
+```
+
+Filen läses av båda tjänsterna med:
+
+```text
+EnvironmentFile=-/etc/dokumentverkstad/dokumentverkstad.env
+```
+
+Minustecknet gör filen valfri. Om ingen AI används kan den saknas.
+
+## Rättigheter
+
+Verifiera att systemanvändaren finns:
+
+```sh
+id dokumentverkstad
+```
+
+Sätt ägare och rättigheter för persistent data:
+
+```sh
+sudo chown -R dokumentverkstad:dokumentverkstad /var/lib/dokumentverkstad
+sudo find /var/lib/dokumentverkstad -type d -exec chmod 750 {} \;
+sudo find /var/lib/dokumentverkstad -type f -exec chmod 640 {} \;
+```
+
+Applikationskoden och configen behöver vara läsbar för
+`dokumentverkstad`-användaren. Den virtuella miljön behöver vara körbar:
+
+```sh
+sudo chown -R root:dokumentverkstad /opt/dokumentverkstad
+sudo find /opt/dokumentverkstad -type d -exec chmod 750 {} \;
+sudo find /opt/dokumentverkstad -type f -exec chmod 640 {} \;
+sudo chmod -R g+rx /opt/dokumentverkstad/.venv/bin
+```
+
+Om deploymenten görs genom `git pull` som en annan administrativ användare kan
+ägare/rättigheter på `/opt/dokumentverkstad` behöva anpassas till den faktiska
+serverrutinen. Ge inte web/worker skrivåtkomst till koden om det inte behövs.
+
+## Starta tjänsterna
+
+Läs om systemd-konfigurationen:
+
+```sh
+sudo systemctl daemon-reload
+```
+
+Aktivera autostart och starta båda tjänsterna:
+
+```sh
+sudo systemctl enable --now dokumentverkstad-web.service
+sudo systemctl enable --now dokumentverkstad-worker.service
+```
+
+Kontrollera status:
+
+```sh
+systemctl status dokumentverkstad-web.service
+systemctl status dokumentverkstad-worker.service
+```
+
+Kontrollera loggar:
+
+```sh
+journalctl -u dokumentverkstad-web.service -n 100 --no-pager
+journalctl -u dokumentverkstad-worker.service -n 100 --no-pager
+```
+
+Följ loggar live:
+
+```sh
+journalctl -u dokumentverkstad-web.service -f
+journalctl -u dokumentverkstad-worker.service -f
+```
+
+Applikationens runtime-logg finns också kvar:
+
+```text
+/var/lib/dokumentverkstad/runtime/logs/dokumentverkstad.log
+```
+
+## Verifiering
+
+Verifiera webben lokalt på servern:
+
+```sh
+curl -I http://127.0.0.1:8000/
+curl http://127.0.0.1:8000/ | head
+```
+
+Verifiera appstatus:
+
+```sh
+/opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /opt/dokumentverkstad/dokumentverkstad.toml status
+```
+
+Verifiera efter reboot:
+
+```sh
+sudo reboot
+```
+
+Efter att servern är uppe igen:
+
+```sh
+systemctl is-active dokumentverkstad-web.service
+systemctl is-active dokumentverkstad-worker.service
+curl -I http://127.0.0.1:8000/
+```
+
+## Restart och stop
+
+Restart:
+
+```sh
+sudo systemctl restart dokumentverkstad-web.service
+sudo systemctl restart dokumentverkstad-worker.service
+```
+
+Stop:
+
+```sh
+sudo systemctl stop dokumentverkstad-web.service
+sudo systemctl stop dokumentverkstad-worker.service
+```
+
+## Enkel deploy efter git pull
+
+Exempel efter att ny kod hämtats till `/opt/dokumentverkstad`:
+
+```sh
+cd /opt/dokumentverkstad
+git pull
+.venv/bin/python -m compileall src/dokumentverkstad
+.venv/bin/python -m unittest discover -s tests
+sudo cp deploy/systemd/dokumentverkstad-web.service /etc/systemd/system/
+sudo cp deploy/systemd/dokumentverkstad-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart dokumentverkstad-web.service
+sudo systemctl restart dokumentverkstad-worker.service
+curl -I http://127.0.0.1:8000/
+```
+
+Om Python-beroenden har ändrats:
+
+```sh
+cd /opt/dokumentverkstad
+.venv/bin/python -m pip install -e .
+```
+
+---
+
 # Huvudserver
 
 * Planerad miljö:
