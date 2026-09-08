@@ -7,6 +7,7 @@ from .archive import Archive
 from .config import AppConfig
 from .diagnostics import runtime_log_path
 from .index import document_index_path
+from .ingest import inspect_ingest_queue
 from .secrets import encrypted_secrets_exists, has_unlocked_openai_api_key, load_openai_api_key
 
 
@@ -16,7 +17,12 @@ class HealthCounts:
     knowledge_objects: int = 0
     projects: int = 0
     ai_runs: int = 0
+    ai_planned: int = 0
+    ai_running: int = 0
+    ai_failed: int = 0
     trash_objects: int = 0
+    ingest_pending: int = 0
+    ingest_failed: int = 0
 
 
 @dataclass(frozen=True)
@@ -44,12 +50,19 @@ def check_health(config: AppConfig) -> HealthResult:
     else:
         try:
             archive = Archive(config.archive_root)
+            ai_runs = archive.list_ai_runs()
+            ingest = inspect_ingest_queue(config.ingest_source)
             counts = HealthCounts(
                 documents=len(archive.list_documents(include_trashed=True)),
                 knowledge_objects=len(archive.list_knowledge_objects()),
                 projects=len(archive.list_projects()),
-                ai_runs=len(archive.list_ai_runs()),
+                ai_runs=len(ai_runs),
+                ai_planned=sum(1 for run in ai_runs if run.status == "planned"),
+                ai_running=sum(1 for run in ai_runs if run.status == "running"),
+                ai_failed=sum(1 for run in ai_runs if run.status == "failed"),
                 trash_objects=len(archive.list_trashed_documents()),
+                ingest_pending=ingest.pending,
+                ingest_failed=ingest.failed,
             )
             archive_readable = True
         except Exception as error:

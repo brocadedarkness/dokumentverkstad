@@ -10,7 +10,7 @@ from dokumentverkstad.index import (
     list_indexed_documents,
     rebuild_document_index,
 )
-from dokumentverkstad.ingest import process_ingest_source
+from dokumentverkstad.ingest import inspect_ingest_queue, process_ingest_source
 from helpers import workspace_tempdir, write_minimal_pdf, write_realistic_text_array_pdf
 
 
@@ -176,8 +176,18 @@ class IngestTests(unittest.TestCase):
             self.assertFalse(results[0].created)
             self.assertTrue(results[1].created)
             self.assertEqual(archive.list_documents()[0].title, "Efterföljande PDF")
-            self.assertTrue((ingest_source / "bad.pdf").exists())
+            self.assertFalse((ingest_source / "bad.pdf").exists())
+            self.assertTrue((ingest_source / "failed" / "bad.pdf").exists())
+            self.assertEqual(
+                results[0].processed_path,
+                (ingest_source / "failed" / "bad.pdf").resolve(),
+            )
+            self.assertIn(
+                "ValueError: test failure",
+                (ingest_source / "failed" / "bad.pdf.error.txt").read_text(encoding="utf-8"),
+            )
             self.assertFalse((ingest_source / "good.pdf").exists())
+            self.assertEqual(inspect_ingest_queue(ingest_source).failed, 1)
             self.assertTrue(any("Misslyckades: ValueError: test failure" in message for message in messages))
 
     def test_index_can_be_rebuilt_from_archive(self) -> None:

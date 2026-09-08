@@ -200,6 +200,22 @@ class AiRunRecord:
             candidate_ids=candidate_ids,
         )
 
+    def running(self) -> "AiRunRecord":
+        return AiRunRecord(
+            id=self.id,
+            document_id=self.document_id,
+            provider=self.provider,
+            model=self.model,
+            prompt_version=self.prompt_version,
+            capabilities=self.capabilities,
+            created_at=self.created_at,
+            status="running",
+            estimated_input_tokens=self.estimated_input_tokens,
+            estimated_output_tokens=self.estimated_output_tokens,
+            estimated_cost=self.estimated_cost,
+            currency=self.currency,
+        )
+
     def failed(self, error: str) -> "AiRunRecord":
         return AiRunRecord(
             id=self.id,

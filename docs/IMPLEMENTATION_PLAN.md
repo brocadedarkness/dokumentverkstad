@@ -1876,11 +1876,11 @@ Användaren ska kunna:
 
 1. öppna Dokumentverkstad i en vanlig webbläsare,
 2. autentisera sig,
-3. använda samma Archive oavsett klient,
-4. ladda upp nya Documents,
-5. göra Captures,
+3. använda samma Arkive oavsett klient,
+4. ladda upp nya Dokument,
+5. göra Noteringar,
 6. starta och reviewa AI-analyser,
-7. stänga klienten utan att någon lokal Archive-synkronisering behövs.
+7. stänga klienten utan att någon lokal Arkiv-synkronisering behövs.
 
 ## Persistent lagring
 

@@ -6,7 +6,6 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from shutil import rmtree
 from time import perf_counter
 from typing import Callable
 from urllib.parse import parse_qs, unquote, urlparse
@@ -34,8 +33,6 @@ from .config import AppConfig, ensure_app_directories, load_config
 from .diagnostics import runtime_log_sink
 from .document import Document
 from .health import check_health
-from .index import rebuild_document_index
-from .ingest import IngestResult, process_pdf_file
 from .knowledge import KnowledgeObject
 from .project import Project
 from .secrets import (
@@ -314,6 +311,16 @@ class CaptureApp:
         <dd>{'OK' if health.archive_readable else 'problem'}</dd>
         <dt>Index</dt>
         <dd>{'OK' if health.index_exists else 'saknas'}</dd>
+        <dt>Ingest väntande</dt>
+        <dd>{health.counts.ingest_pending}</dd>
+        <dt>Ingest misslyckade</dt>
+        <dd>{health.counts.ingest_failed}</dd>
+        <dt>AI väntande</dt>
+        <dd>{health.counts.ai_planned}</dd>
+        <dt>AI pågående</dt>
+        <dd>{health.counts.ai_running}</dd>
+        <dt>AI misslyckade</dt>
+        <dd>{health.counts.ai_failed}</dd>
         <dt>OpenAI credential</dt>
         <dd>{escape(health.credential_status)}</dd>
         <dt>Papperskorg</dt>
@@ -977,7 +984,6 @@ class CaptureApp:
 
         document = self.archive.get_document(document_id)
         started = perf_counter()
-        self._log(f"ai analysis start document_id={document.id}")
         text = self._read_document_text(document)
         estimate = self._estimate_document_ai_cost(text)
         validate_document_size(estimate.input_tokens)
@@ -989,7 +995,53 @@ class CaptureApp:
             estimate=estimate,
         )
         self.archive.save_ai_run(run)
+        self._log(
+            "ai analysis queued "
+            f"document_id={document.id} "
+            f"run_id={run.id} "
+            f"duration_ms={(perf_counter() - started) * 1000:.1f}"
+        )
+        return self.run_ai_run(run.id)
 
+    def enqueue_document_ai_analysis_from_form(
+        self, document_id: str, body: bytes
+    ) -> AiRunRecord:
+        form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
+        if form.get("confirm_ai", [""])[0] != "yes":
+            raise AiProviderError("AI-analys kräver uttryckligt godkännande.")
+
+        document = self.archive.get_document(document_id)
+        started = perf_counter()
+        text = self._read_document_text(document)
+        estimate = self._estimate_document_ai_cost(text)
+        validate_document_size(estimate.input_tokens)
+        run = AiRunRecord.create(
+            document_id=document.id,
+            provider=self.ai_provider_name,
+            model=self.ai_model,
+            capabilities=AI_CAPABILITIES,
+            estimate=estimate,
+        )
+        self.archive.save_ai_run(run)
+        self._log(
+            "ai analysis queued "
+            f"document_id={document.id} "
+            f"run_id={run.id} "
+            f"duration_ms={(perf_counter() - started) * 1000:.1f}"
+        )
+        return run
+
+    def run_ai_run(self, run_id: str) -> AiRunRecord:
+        run = self.archive.get_ai_run(run_id)
+        if run.status not in {"planned", "running"}:
+            return run
+
+        document = self.archive.get_document(run.document_id)
+        started = perf_counter()
+        running = run.running()
+        self.archive.save_ai_run(running)
+        self._log(f"ai analysis start document_id={document.id} run_id={run.id}")
+        text = self._read_document_text(document)
         try:
             provider = self._make_ai_provider()
             projects = tuple(
@@ -1033,19 +1085,44 @@ class CaptureApp:
             self._log(
                 "ai analysis completed "
                 f"document_id={document.id} "
+                f"run_id={run.id} "
                 f"candidate_count={len(candidate_ids)} "
                 f"duration_ms={(perf_counter() - started) * 1000:.1f}"
             )
             return completed
-        except AiProviderError:
-            failed = run.failed("AI-körningen misslyckades.")
+        except Exception as error:
+            failed = running.failed(_safe_ai_error_message(error))
             self.archive.save_ai_run(failed)
             self._log(
                 "ai analysis failed "
                 f"document_id={document.id} "
+                f"run_id={run.id} "
+                f"error={error.__class__.__name__} "
                 f"duration_ms={(perf_counter() - started) * 1000:.1f}"
             )
             raise
+
+    def run_next_planned_ai_analysis(self) -> str | None:
+        planned_runs = [
+            run for run in reversed(self.archive.list_ai_runs()) if run.status == "planned"
+        ]
+        if not planned_runs:
+            return None
+        run = self.run_ai_run(planned_runs[0].id)
+        return run.id
+
+    def recover_interrupted_ai_runs(self) -> tuple[str, ...]:
+        recovered: list[str] = []
+        for run in self.archive.list_ai_runs():
+            if run.status != "running":
+                continue
+            failed = run.failed(
+                "AI-analysen avbröts innan den slutfördes. Starta analysen igen."
+            )
+            self.archive.save_ai_run(failed)
+            recovered.append(run.id)
+            self._log(f"ai analysis recovered interrupted run_id={run.id}")
+        return tuple(recovered)
 
     def update_inbox_document_from_form(self, document_id: str, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -1062,47 +1139,36 @@ class CaptureApp:
         self.archive.delete_trashed_document_permanently(document_id)
         self._log(f"trash document permanently deleted document_id={document_id}")
 
-    def ingest_uploaded_pdf(self, body: bytes, content_type: str) -> IngestResult:
+    def enqueue_uploaded_pdf(self, body: bytes, content_type: str) -> Path:
         if not self.config:
             raise ValueError("Webb-upload kräver konfigurerad runtime.")
         started = perf_counter()
         filename, content = _multipart_pdf_upload(body, content_type)
         safe_filename = _safe_upload_filename(filename)
+        _ensure_uploaded_pdf_content(content)
         self._log(
-            "upload started "
+            "upload queued "
             f"filename={safe_filename} "
             f"size_bytes={len(content)}"
         )
-        upload_root = self.config.runtime_root / "uploads" / uuid4().hex
-        upload_root.mkdir(parents=True, exist_ok=False)
-        upload_path = upload_root / safe_filename
+        queue_path = _unique_queue_path(self.config.ingest_source / safe_filename)
+        queue_path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            upload_path.write_bytes(content)
-            result = process_pdf_file(
-                archive=self.archive,
-                pdf_path=upload_path,
-                runtime_root=self.config.runtime_root,
-                log=self._log,
-                move_to_processed=False,
-            )
-            rebuild_document_index(self.archive, self.config.runtime_root)
+            queue_path.write_bytes(content)
             self._log(
-                "upload ingest completed "
-                f"document_id={result.document.id if result.document else ''} "
-                f"created={result.created} "
+                "upload enqueue completed "
+                f"path={queue_path} "
                 f"duration_ms={(perf_counter() - started) * 1000:.1f}"
             )
-            return result
+            return queue_path
         except Exception as error:
             self._log(
-                "upload ingest failed "
+                "upload enqueue failed "
                 f"filename={safe_filename} "
                 f"error={error.__class__.__name__} "
                 f"duration_ms={(perf_counter() - started) * 1000:.1f}"
             )
             raise
-        finally:
-            rmtree(upload_root, ignore_errors=True)
 
     def create_note_from_form(self, body: bytes) -> None:
         form = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -1772,6 +1838,7 @@ class CaptureApp:
             if text_available
             else "<p>AI-analys kräver extraherad dokumenttext.</p>"
         )
+        operation_status = self._render_ai_operation_status(runs)
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
             rendered_candidates = (
@@ -1782,7 +1849,7 @@ class CaptureApp:
         )
         rendered_runs = "\n".join(
             (
-                f"<li>{escape(run.status)} - {escape(run.model)} - "
+                f"<li>{escape(_ai_run_status_label(run.status))} - {escape(run.model)} - "
                 f"{run.actual_input_tokens}/{run.actual_output_tokens} token - "
                 f"{run.actual_cost:.6f} {escape(run.currency)}</li>"
             )
@@ -2114,6 +2181,7 @@ class CaptureApp:
             if text_available
             else "<p>AI-analys kräver extraherad dokumenttext.</p>"
         )
+        operation_status = self._render_ai_operation_status(runs)
         rendered_candidates = self._render_ai_candidate_groups(candidates)
         if not rendered_candidates:
             rendered_candidates = (
@@ -2121,7 +2189,7 @@ class CaptureApp:
             )
         rendered_runs = "\n".join(
             (
-                f"<li>{escape(run.status)} - {escape(run.model)} - "
+                f"<li>{escape(_ai_run_status_label(run.status))} - {escape(run.model)} - "
                 f"{run.actual_input_tokens}/{run.actual_output_tokens} token - "
                 f"{run.actual_cost:.6f} {escape(run.currency)}</li>"
             )
@@ -2135,6 +2203,7 @@ class CaptureApp:
       <section class="ai-operation" aria-labelledby="ai-operation">
         <h3 id="ai-operation">AI-operation</h3>
         {ai_action}
+        {operation_status}
         <details>
           <summary>Tidigare körningar</summary>
           <ul>{rendered_runs}</ul>
@@ -2145,6 +2214,17 @@ class CaptureApp:
       <p><a href="/documents/{escape(document.id)}/review-history">Tidigare AI-granskning</a></p>
     </section>
 """
+
+    def _render_ai_operation_status(self, runs: list[AiRunRecord]) -> str:
+        for run in runs:
+            if run.status == "planned":
+                return '<p class="system-note">AI-analys väntar på bakgrundsarbete.</p>'
+            if run.status == "running":
+                return '<p class="system-note">AI-analys pågår.</p>'
+            if run.status == "failed":
+                error = escape(run.error or "AI-körningen misslyckades.")
+                return f'<p class="system-note">AI-analys misslyckades: {error}</p>'
+        return ""
 
     def _render_document_content_sections(self, notes: list[KnowledgeObject]) -> str:
         groups = (
@@ -3270,7 +3350,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
 
             if parsed.path == "/upload":
                 try:
-                    result = app.ingest_uploaded_pdf(
+                    app.enqueue_uploaded_pdf(
                         body,
                         self.headers.get("Content-Type", ""),
                     )
@@ -3284,13 +3364,7 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                         )
                     )
                     return
-                document = result.document
-                if document and result.created:
-                    message = "Dokumentet har lagts till i inkorgen."
-                elif document:
-                    message = "PDF-filen finns redan i arkivet."
-                else:
-                    message = "PDF-filen kunde inte importeras."
+                message = "PDF-filen har lagts till i importkön."
                 self._send_html(app.render_upload(message=message))
                 return
 
@@ -3380,13 +3454,13 @@ def make_handler(app: CaptureApp) -> type[BaseHTTPRequestHandler]:
                 document_path = unquote(parsed.path.removeprefix("/documents/"))
                 document_id = document_path.removesuffix("/ai/run")
                 try:
-                    app.run_document_ai_analysis_from_form(document_id, body)
+                    app.enqueue_document_ai_analysis_from_form(document_id, body)
                 except AiProviderError as error:
                     document = app.archive.get_document(document_id)
                     self._send_html(app.render_ai_message(document, str(error)))
                     return
                 self.send_response(HTTPStatus.SEE_OTHER)
-                self.send_header("Location", "/inbox")
+                self.send_header("Location", f"/documents/{document_id}#ai-review")
                 self.end_headers()
                 return
 
@@ -3587,6 +3661,36 @@ def _safe_upload_filename(filename: str) -> str:
     return name
 
 
+def _ensure_uploaded_pdf_content(content: bytes) -> None:
+    if not content.startswith(b"%PDF-"):
+        raise ValueError("Filen är inte en PDF.")
+
+
+def _unique_queue_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    candidate = path
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}-{uuid4().hex[:8]}{path.suffix}")
+    return candidate
+
+
+def _safe_ai_error_message(error: Exception) -> str:
+    if isinstance(error, AiProviderError):
+        return str(error) or "AI-körningen misslyckades."
+    return f"AI-körningen misslyckades: {error.__class__.__name__}."
+
+
+def _ai_run_status_label(status: str) -> str:
+    labels = {
+        "planned": "väntar",
+        "running": "pågår",
+        "completed": "klar",
+        "failed": "misslyckad",
+    }
+    return labels.get(status, status)
+
+
 def unlock_configured_secrets(config: AppConfig, password: str | None = None) -> None:
     if not encrypted_secrets_exists(config.encrypted_secrets_path):
         return
@@ -3599,6 +3703,8 @@ def unlock_configured_secrets(config: AppConfig, password: str | None = None) ->
 
 
 def main(config_path: str | None = None, password: str | None = None) -> None:
+    from .worker import BackgroundWorker
+
     config = load_config(config_path)
     ensure_app_directories(config)
     try:
@@ -3611,5 +3717,18 @@ def main(config_path: str | None = None, password: str | None = None) -> None:
         log=runtime_log_sink(config.runtime_root),
     )
     server = ThreadingHTTPServer((config.host, config.port), make_handler(app))
+    worker = BackgroundWorker(
+        Archive(config.archive_root),
+        config,
+        run_next_ai_job=app.run_next_planned_ai_analysis,
+        recover_ai_jobs=app.recover_interrupted_ai_runs,
+        log=app._log,
+    )
+    worker.start()
     print(f"Dokumentverkstad körs på http://{config.host}:{config.port}/")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        worker.stop()
+        if hasattr(server, "server_close"):
+            server.server_close()

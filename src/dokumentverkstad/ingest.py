@@ -21,6 +21,12 @@ class IngestResult:
     processed_path: Path | None = None
 
 
+@dataclass(frozen=True)
+class IngestQueueStatus:
+    pending: int
+    failed: int
+
+
 def process_ingest_source(
     archive: Archive,
     ingest_source: str | Path,
@@ -48,10 +54,26 @@ def process_ingest_source(
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             _log(log, f"  Misslyckades: {message}")
+            failed_path = _move_failed_pdf(pdf_path, source_root / "failed", message)
             results.append(
-                IngestResult(None, created=False, source_path=pdf_path, error=message)
+                IngestResult(
+                    None,
+                    created=False,
+                    source_path=pdf_path,
+                    error=message,
+                    processed_path=failed_path,
+                )
             )
     return results
+
+
+def inspect_ingest_queue(ingest_source: str | Path) -> IngestQueueStatus:
+    source_root = ensure_directory(ingest_source, "ingest_source")
+    failed_root = source_root / "failed"
+    return IngestQueueStatus(
+        pending=len(tuple(source_root.glob("*.pdf"))),
+        failed=len(tuple(failed_root.glob("*.pdf"))) if failed_root.is_dir() else 0,
+    )
 
 
 def process_pdf_file(
@@ -141,6 +163,17 @@ def _move_processed_pdf(pdf_path: Path, processed_root: Path) -> Path:
         processed_path = _unique_processed_path(processed_path)
     shutil.move(str(pdf_path), str(processed_path))
     return processed_path
+
+
+def _move_failed_pdf(pdf_path: Path, failed_root: Path, error: str) -> Path:
+    failed_root.mkdir(parents=True, exist_ok=True)
+    failed_path = failed_root / pdf_path.name
+    if failed_path.exists():
+        failed_path = _unique_processed_path(failed_path)
+    shutil.move(str(pdf_path), str(failed_path))
+    error_path = failed_path.with_suffix(f"{failed_path.suffix}.error.txt")
+    error_path.write_text(error + "\n", encoding="utf-8")
+    return failed_path
 
 
 def _unique_processed_path(path: Path) -> Path:

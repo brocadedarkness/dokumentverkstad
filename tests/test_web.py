@@ -12,6 +12,7 @@ from dokumentverkstad.config import AppConfig
 from dokumentverkstad.index import list_indexed_documents
 from dokumentverkstad.ingest import calculate_checksum
 from dokumentverkstad.web import CaptureApp, make_handler
+from dokumentverkstad.worker import process_worker_cycle
 from helpers import workspace_tempdir, write_minimal_pdf
 
 
@@ -1043,6 +1044,46 @@ class CaptureAppTests(unittest.TestCase):
             self.assertNotIn("sk-should-not-log", joined)
             self.assertNotIn("VERY SECRET DOCUMENT TEXT", joined)
 
+    def test_ai_run_post_queues_job_without_calling_provider(self) -> None:
+        class ProviderThatMustNotRun(AiProvider):
+            name = "mock"
+
+            def analyze_document(self, **kwargs):  # type: ignore[no-untyped-def]
+                raise AssertionError("provider should not run during HTTP request")
+
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _web_config(root)
+            archive = Archive(config.archive_root)
+            pdf_path = root / "rapport.pdf"
+            write_minimal_pdf(pdf_path, title="AI rapport", text="Text för AI.")
+            document = archive.register_document_with_original_pdf(
+                pdf_path,
+                title="AI rapport",
+                text="Text för AI.",
+                checksum_sha256=calculate_checksum(pdf_path),
+            )
+            app = CaptureApp(archive, config=config, ai_provider=ProviderThatMustNotRun())
+            server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(app))
+            thread = threading.Thread(target=server.serve_forever)
+            thread.start()
+            try:
+                status, location = _post(
+                    server,
+                    f"/documents/{document.id}/ai/run",
+                    "confirm_ai=yes",
+                )
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+
+            self.assertEqual(status, 303)
+            self.assertEqual(location, f"/documents/{document.id}#ai-review")
+            runs = Archive(config.archive_root).list_ai_runs_for_document(document.id)
+            self.assertEqual(len(runs), 1)
+            self.assertEqual(runs[0].status, "planned")
+
     def test_existing_project_link_hides_project_suggestion_and_not_duplicate_link(self) -> None:
         with workspace_tempdir() as tmp:
             archive = Archive(Path(tmp) / "archive")
@@ -1519,7 +1560,7 @@ class CaptureAppTests(unittest.TestCase):
             self.assertIn('type="file"', upload)
             self.assertIn('accept="application/pdf,.pdf"', upload)
 
-    def test_valid_pdf_upload_creates_document_original_text_inbox_and_index(self) -> None:
+    def test_valid_pdf_upload_is_queued_and_worker_creates_document_original_text_inbox_and_index(self) -> None:
         with workspace_tempdir() as tmp:
             root = Path(tmp)
             config = _web_config(root)
@@ -1544,7 +1585,12 @@ class CaptureAppTests(unittest.TestCase):
             archive = Archive(config.archive_root)
             documents = archive.list_documents()
             self.assertEqual(status, 200)
-            self.assertIn("Dokumentet har lagts till i inkorgen.", body)
+            self.assertIn("PDF-filen har lagts till i importkön.", body)
+            self.assertEqual(documents, [])
+            self.assertTrue((config.ingest_source / "2024 Mobil rapport.pdf").exists())
+
+            process_worker_cycle(archive, config)
+            documents = archive.list_documents()
             self.assertEqual(len(documents), 1)
             self.assertEqual(documents[0].title, "Mobil rapport")
             self.assertEqual(documents[0].year, "2024")
@@ -1561,7 +1607,7 @@ class CaptureAppTests(unittest.TestCase):
                 ["Mobil rapport"],
             )
 
-    def test_upload_duplicate_does_not_create_second_document(self) -> None:
+    def test_upload_duplicate_does_not_create_second_document_after_worker_processing(self) -> None:
         with workspace_tempdir() as tmp:
             root = Path(tmp)
             config = _web_config(root)
@@ -1582,8 +1628,10 @@ class CaptureAppTests(unittest.TestCase):
                 thread.join()
 
             self.assertEqual(status, 200)
-            self.assertIn("PDF-filen finns redan i arkivet.", body)
-            self.assertEqual(len(Archive(config.archive_root).list_documents()), 1)
+            self.assertIn("PDF-filen har lagts till i importkön.", body)
+            archive = Archive(config.archive_root)
+            process_worker_cycle(archive, config)
+            self.assertEqual(len(archive.list_documents()), 1)
 
     def test_directory_ingest_and_upload_share_checksum_duplicate_semantics(self) -> None:
         with workspace_tempdir() as tmp:
@@ -1610,8 +1658,10 @@ class CaptureAppTests(unittest.TestCase):
                 thread.join()
 
             self.assertEqual(status, 200)
-            self.assertIn("PDF-filen finns redan i arkivet.", body)
-            self.assertEqual(len(Archive(config.archive_root).list_documents()), 1)
+            self.assertIn("PDF-filen har lagts till i importkön.", body)
+            archive = Archive(config.archive_root)
+            process_worker_cycle(archive, config)
+            self.assertEqual(len(archive.list_documents()), 1)
 
     def test_upload_filename_traversal_is_reduced_to_safe_basename(self) -> None:
         with workspace_tempdir() as tmp:
@@ -1634,6 +1684,8 @@ class CaptureAppTests(unittest.TestCase):
 
             documents = Archive(config.archive_root).list_documents()
             self.assertEqual(status, 200)
+            process_worker_cycle(Archive(config.archive_root), config)
+            documents = Archive(config.archive_root).list_documents()
             self.assertEqual(documents[0].original_filename, "2025 Säker.pdf")
             self.assertFalse((root / "2025 Säker.pdf").exists())
 

@@ -30,6 +30,7 @@ from .secrets import (
     set_openai_api_key,
 )
 from .web import main as run_web
+from .worker import run_worker_loop
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -61,6 +62,7 @@ def main(argv: list[str] | None = None) -> None:
 
     subparsers.add_parser("process-ingest")
     subparsers.add_parser("rebuild-index")
+    subparsers.add_parser("worker")
 
     args = parser.parse_args(argv)
     command = args.command or "run"
@@ -103,6 +105,20 @@ def main(argv: list[str] | None = None) -> None:
             print(
                 f"Registrerade {created} PDF-dokument. "
                 f"Dubbletter: {duplicates}. Misslyckade: {failed}."
+            )
+            return
+
+        if command == "worker":
+            from .web import CaptureApp
+
+            log = runtime_log_sink(config.runtime_root)
+            app = CaptureApp(archive, config=config, log=log)
+            run_worker_loop(
+                archive=Archive(config.archive_root),
+                config=config,
+                run_next_ai_job=app.run_next_planned_ai_analysis,
+                recover_ai_jobs=app.recover_interrupted_ai_runs,
+                log=log,
             )
             return
 
@@ -221,7 +237,12 @@ def _print_status(config: AppConfig, config_path: str | None) -> None:
     print(f"Knowledge Objects: {health.counts.knowledge_objects}")
     print(f"Projects: {health.counts.projects}")
     print(f"AI runs: {health.counts.ai_runs}")
+    print(f"AI planerade: {health.counts.ai_planned}")
+    print(f"AI pågående: {health.counts.ai_running}")
+    print(f"AI misslyckade: {health.counts.ai_failed}")
     print(f"Trash-objekt: {health.counts.trash_objects}")
+    print(f"Ingest väntande: {health.counts.ingest_pending}")
+    print(f"Ingest misslyckade: {health.counts.ingest_failed}")
     print(
         "Krypterade secrets: "
         f"{'konfigurerade' if health.encrypted_secrets else 'saknas'}"
