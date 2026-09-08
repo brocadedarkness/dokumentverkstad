@@ -1954,6 +1954,58 @@ Det ska vara möjligt att:
 
 En hyrd VPS ska därför kunna ersättas av exempelvis en framtida hemmaserver utan datamigrering till ett nytt proprietärt format.
 
+## Bakgrundsarbete och automatisk ingest
+
+En serverbaserad Dokumentverkstad ska kunna utföra normalt bakgrundsarbete utan
+att användaren behöver logga in på servern eller köra särskilda CLI-kommandon.
+
+Ingest ska fungera som en faktisk kö.
+
+När en fil har placerats i ingest, exempelvis genom webbuppladdning, ska den
+automatiskt tas om hand av den normala ingest- och processeringskedjan.
+
+Normal användning ska därför inte kräva ett separat manuellt kommando för att:
+
+- upptäcka nya filer i ingest,
+- processera dem,
+- skapa motsvarande Document,
+- flytta eller markera färdigbehandlat ingest-material.
+
+Bearbetningen ska vara robust mot enskilda fel.
+
+En fil som inte kan processeras ska:
+
+- inte stoppa övriga filer i kön,
+- inte importeras upprepade gånger,
+- lämna ett begripligt diagnostiskt spår,
+- kunna hanteras administrativt i efterhand.
+
+Lyckat processerade filer ska inte ligga kvar som aktiva ingest-uppgifter.
+
+Den tekniska lösningen ska hållas enkel. Iterationen behöver inte införa en
+distribuerad job queue eller extern köplattform om en lokal worker,
+service-process eller motsvarande räcker.
+
+### Långvariga AI-operationer
+
+Långvariga AI-analyser ska inte vara beroende av att den HTTP-request som
+startade analysen hålls öppen tills analysen är färdig.
+
+Användaren ska kunna:
+
+1. starta en AI-analys,
+2. få tydlig information om att arbetet pågår,
+3. lämna sidan eller stänga klienten,
+4. senare återvända och se resultatet eller ett begripligt fel.
+
+AI-operationens livscykel och AI-review ska fortsatt vara separata begrepp.
+
+En enkel lokal bakgrundsmekanism är tillräcklig för MVP:n. Distribuerad
+jobbkörning är inte ett krav.
+
+Bakgrundsarbete ska återhämta sig begripligt efter normal serveromstart. Ett
+avbrutet arbete får inte tyst framstå som färdigt.
+
 ## Avgränsning
 
 Iteration 10 ska inte implementera:
@@ -1986,12 +2038,23 @@ Iteration 10 är godkänd när:
 * backupen kan återställas till en separat installation,
 * Runtime fortsatt kan återskapas från Archive,
 * hela den befintliga testsviten fortsatt passerar.
+* en PDF som laddas upp från fjärrklient processeras till ett Document utan att
+  något manuellt ingest-kommando körs,
+* flera filer i ingest kan behandlas utan manuell serverinteraktion,
+* ett felaktigt eller ej processerbart dokument stoppar inte övrig ingest,
+* färdigprocesserade ingest-filer lämnas inte kvar som aktiva uppgifter,
+* en AI-analys kan startas från en klient utan att klienten behöver hålla en
+  lång HTTP-request öppen,
+* klienten kan lämnas eller stängas medan AI-analysen körs och resultatet kan
+  senare hämtas,
+* bakgrundsarbete lämnar begriplig status och diagnostik efter fel eller
+  serveromstart,
 
 ## Klart när
 
 Iteration 10 är klar när följande scenario fungerar:
 
-> Anders öppnar Dokumentverkstad från en vanlig webbläsare på en dator, en iPad eller en telefon och arbetar alltid mot samma kunskapsrum. Archive finns på en server och behöver inte synkroniseras mellan klienterna. Nya dokument, Captures och AI-resultat blir omedelbart del av samma Archive. Servern kan startas om utan handpåläggning och kunskapsrummet kan säkerhetskopieras och återställas på en annan maskin utan att dess struktur förändras.
+> Anders öppnar Dokumentverkstad från en vanlig webbläsare på en dator, en iPad eller en telefon och arbetar alltid mot samma kunskapsrum. Archive finns på en server och behöver inte synkroniseras mellan klienterna. Nya dokument, Captures och AI-resultat blir omedelbart del av samma Archive. Servern kan startas om utan handpåläggning och kunskapsrummet kan säkerhetskopieras och återställas på en annan maskin utan att dess struktur förändras. Normal användning, inklusive ingest och AI-bearbetning, kräver inte att användaren loggar in på servern, håller en klient öppen eller manuellt kör processeringskommandon.
 
 # Senare iterationer
 
