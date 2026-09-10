@@ -784,10 +784,16 @@ Projects används som användarcentrerade sammanhang snarare än som en konsekve
 
 När ett dokument gått igenom en AI-review och hamnat i inboxen, behöver inboxen också innehålla en länk till dokumentet.
 
-# 2026-09-08
+# 2026-09-10
 
 ## Prestanda
 
 /documents kan under vissa lokala körningar ta ~30 s. Flaskhalsen är document_list_items, inte projektlistning eller generell request overhead.
 
-## 
+## Inkorgen
+
+Metadata behöver kunna redigeras i inkorgen, istället för att som idag spara ett inkommet dokument och sedan leta upp det i Dokumentvyn för att ändra metadata.
+
+## AI-analyser
+
+Finns det en poäng med möjligheten att göra en AI-analys av flera dokument samtidigt (t.ex. Förläggareföreningens bokförsäljningsstatistik över ett antal år) eller görs detta bäst externt genom MCP-lagret?
