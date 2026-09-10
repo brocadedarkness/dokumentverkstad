@@ -2,7 +2,7 @@ Backloggen samlar idéer, möjliga framtida funktioner och identifierade behov s
 
 ---
 
-# MCP – ”Exponera kunskapsrummet”
+# MCP
 
 Read-only MCP-server som låter externa AI-klienter läsa Documents, metadata, Captures/Knowledge Objects och söka i kunskapsrummet. Djupare AI-konversationer sker utanför Dokumentverkstad och behöver inte lagras där.
 
@@ -11,7 +11,7 @@ Read-only MCP-server som låter externa AI-klienter läsa Documents, metadata, C
 Nuvarande snabbsökning filtrerar bara titel/upphov/år. Senare: indexering och sökning i dokumenttext, Captures, Claims, Insights och Questions.
 
 # Fler dokumentformat
-Framför allt EPUB, men också frågan om andra format som DOCX etc. Du har redan filer i arkivet som inte kunde importeras eftersom de inte är PDF.
+Framför allt EPUB, men också frågan om andra format som DOCX etc. 
 
 # Extern webbtillgång utan Tailscale-klient
 
@@ -20,10 +20,6 @@ Ett enda privat Archive som kan nås från exempelvis jobbdatorn via vanlig HTTP
 # Automatiserad backup
 
 Nattliga backups till konfigurerbar katalog, exempelvis en Dropbox-synkad katalog. Retention först kanske fem senaste; senare eventuellt daily/weekly/monthly-generationer.
-
-# Bakgrundsjobb för AI
-
-AI-anrop ligger fortfarande synkront i HTTP-requesten och kan ta 80+ sekunder. Kör analys som jobb i bakgrunden med status/progress i UI.
 
 # AI max-token override och bättre kostnadsuppskattning
 
@@ -60,10 +56,6 @@ Möjlighet att skjuta undan något ur Inbox och få tillbaka det exempelvis näs
 # AI-frågor som lässtöd
 
 AI-genererade Questions skulle kunna användas som vägledning vid snabb manuell läsning, men det måste framgå att dokumentet inte nödvändigtvis besvarar dem.
-
-# Första-körningsflödet kan utvecklas vidare
-
-8.1 löste mycket av konfigurationen, men ett riktigt installations-/onboardingflöde kan senare hantera exempelvis Archive-placering, AI-provider, nätverksåtkomst etc.
 
 # Archival integrity / TDR alignment
 
