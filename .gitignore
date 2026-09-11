@@ -25,4 +25,7 @@ src/dokumentverkstad.egg-info/
 
 # Lokala konfigurationsfiler (om de innehåller API-nycklar)
 .env
+/deploy/caddy/dokumentverkstad.auth
+/deploy/caddy/Caddyfile.local
+/deploy/systemd/dokumentverkstad.env
 dokumentverkstad-backup-*.zip

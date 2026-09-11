@@ -15,7 +15,9 @@ Framför allt EPUB, men också frågan om andra format som DOCX etc.
 
 # Extern webbtillgång utan Tailscale-klient
 
-Ett enda privat Archive som kan nås från exempelvis jobbdatorn via vanlig HTTPS. Cloudflare Tunnel + Access är ett tänkbart framtida alternativ. Viktig princip: inte flera synkroniserade Dokumentverkstad-arkiv.
+Flyttat till Iteration 10: ett enda privat Archive nås via vanlig HTTPS med
+Caddy och HTTP Basic Auth. 10.3.1 förbereder deploymenten; verklig extern
+aktivering görs i 10.3.2 enligt [DEPLOYMENT.md](DEPLOYMENT.md).
 
 # Automatiserad backup
 

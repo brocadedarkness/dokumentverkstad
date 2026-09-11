@@ -1,0 +1,4 @@
+# Copy to /etc/caddy/dokumentverkstad.auth ONLY during iteration 10.3.2.
+# Owner root:caddy, mode 0640. Replace BOTH placeholders on the server.
+# Generate the hash interactively with: caddy hash-password --algorithm bcrypt
+REPLACE_WITH_USERNAME REPLACE_WITH_BCRYPT_HASH

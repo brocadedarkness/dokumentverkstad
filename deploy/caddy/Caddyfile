@@ -1,0 +1,13 @@
+# Preparation only: replace the domain on the server in iteration 10.3.2.
+# Do not run this template for the placeholder domain.
+verkstad.example.com {
+	# Required file beside the installed Caddyfile; no wildcard or public route.
+	basic_auth bcrypt {
+		import dokumentverkstad.auth
+	}
+
+	reverse_proxy 127.0.0.1:8000 {
+		# Credentials belong to Caddy, not the application.
+		header_up -Authorization
+	}
+}

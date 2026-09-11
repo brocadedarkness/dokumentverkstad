@@ -1905,9 +1905,14 @@ En internetåtkomlig Dokumentverkstad måste skyddas med:
 
 Att känna till serverns URL får inte i sig ge tillgång till Archive.
 
-Den exakta lösningen ska väljas när iterationen genomförs.
+Beslutad lösning är Caddy som reverse proxy och TLS-terminering med HTTP
+Basic Auth för en enda användare. Webben lyssnar på `127.0.0.1:8000` och
+workern har ingen publik port. Ingen loginmodell införs i applikationen.
 
-Möjliga arkitekturer kan exempelvis använda en autentiserande reverse proxy eller extern access-gateway framför Dokumentverkstad.
+10.3.1 förbereder versionshanterad Caddy-konfiguration, separat serverlagrad
+credential-fil och driftinstruktioner. 10.3.2 väljer verklig domän, sätter DNS
+och credentials samt aktiverar och verifierar extern HTTPS. Se
+[DEPLOYMENT.md](DEPLOYMENT.md) för den ordnade aktiveringschecklistan.
 
 Dokumentverkstad ska inte exponeras direkt mot internet utan ett definierat autentiseringslager.
 

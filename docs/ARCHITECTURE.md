@@ -477,6 +477,13 @@ Det förändrar inte automatiskt sitt eget beteende.
 
 # Webbgränssnitt
 
+I Iteration 10 körs ett personligt kunskapsrum på servern. Extern åtkomst går
+genom Caddy med HTTPS och HTTP Basic Auth för hela webbgränssnittet. Webben
+lyssnar endast på loopback; en separat worker bearbetar ingest och planerade
+AI-jobb mot samma Archive/Runtime utan publik port. Domän, TLS och
+auth-credentials tillhör deploymentlagret, se [DEPLOYMENT.md](DEPLOYMENT.md).
+Applikationen har ingen användardatabas eller sessionsbaserad login.
+
 Webbgränssnittet ska vara serverrenderat.
 
 Minimal JavaScript.
