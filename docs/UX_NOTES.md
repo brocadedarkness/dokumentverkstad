@@ -808,6 +808,10 @@ Synlig AI-jobbstatus i gränssnittet. När en AI-analys har startats men ännu i
 
 Filtrering kan göras direkt när man väljer ett nytt alternativ i drop down-menyerna, istället för att man ska behöva klicka på en "filtrera"-knapp.
 
+## Enskilda dokument
+
+Det behöver gå att lägga till eller ta bort projekt från de enskilda dokumenten, även efter att de passerat inkorgen. Det behöver också gå att ta bort noteringar, inte bara redigera dem.
+
 ## Prestanda
 
 Prestandaproblemen i /documents verkar ha lösts efter flytten till VPS-miljö. Sannolikt hängde de ihop med att tjänsten kördes lokalt på en ganska klen Windows-PC. Kan vara bra att ha med sig för ev. framtida lokala implementationer, men ingenting som just nu akut behöver lösas.
