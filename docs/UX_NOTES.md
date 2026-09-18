@@ -807,3 +807,7 @@ Synlig AI-jobbstatus i gränssnittet. När en AI-analys har startats men ännu i
 ## Filtrering i dokumentvyn
 
 Filtrering kan göras direkt när man väljer ett nytt alternativ i drop down-menyerna, istället för att man ska behöva klicka på en "filtrera"-knapp.
+
+## Prestanda
+
+Prestandaproblemen i /documents verkar ha lösts efter flytten till VPS-miljö. Sannolikt hängde de ihop med att tjänsten kördes lokalt på en ganska klen Windows-PC. Kan vara bra att ha med sig för ev. framtida lokala implementationer, men ingenting som just nu akut behöver lösas.
