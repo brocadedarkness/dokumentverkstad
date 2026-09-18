@@ -797,3 +797,9 @@ Metadata behöver kunna redigeras i inkorgen, istället för att som idag spara 
 ## AI-analyser
 
 Finns det en poäng med möjligheten att göra en AI-analys av flera dokument samtidigt (t.ex. Förläggareföreningens bokförsäljningsstatistik över ett antal år) eller görs detta bäst externt genom MCP-lagret?
+
+# 2026-09-18
+
+## Jobbstatus pågående AI-körningar
+
+Synlig AI-jobbstatus i gränssnittet. När en AI-analys har startats men ännu inte är färdig ska dokumentvyn visa ett diskret tillstånd, exempelvis ”AI-analys pågår”. Det ska bygga på befintlig jobbstatus (planned/running) och inte kräva att klienten hålls öppen. Automatisk uppdatering/pollning kan övervägas senare; för MVP räcker det att statusen syns när sidan renderas.
