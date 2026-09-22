@@ -169,6 +169,52 @@ Det kan exempelvis ligga:
 
 Dokumentverkstad ska inte vara beroende av en viss lagringslösning.
 
+## Ansvarsgräns för backup
+
+Dokumentverkstad ansvarar för backupens semantik, men inte för den externa
+backupinfrastrukturens policy.
+
+Det innebär att Dokumentverkstad ska kunna:
+
+- skapa en komplett och portabel backup av Archive,
+- avgöra vilka delar av applikationens tillstånd som ska och inte ska ingå,
+- skapa nödvändigt manifest och integritetsinformation,
+- verifiera att en backup är giltig,
+- återställa en backup,
+- återskapa härledd Runtime efter restore.
+
+Dessa operationer tillhör applikationsdomänen eftersom endast
+Dokumentverkstad kan definiera vad en giltig och återställningsbar kopia av
+ett Archive är.
+
+Däremot ansvarar driftmiljön för backupens orkestrering. Dit hör exempelvis:
+
+- när och hur ofta backup ska skapas,
+- transport till extern lagring,
+- val av extern lagringsleverantör,
+- hantering av credentials för extern lagring,
+- retention och gallring av backupgenerationer,
+- övervakning och rapportering av schemalagda backupjobb.
+
+Den principiella gränsen är:
+
+> **Dokumentverkstad skapar, verifierar och återställer backup. Driftmiljön
+> schemalägger, transporterar och förvaltar backupgenerationer.**
+
+CLI-kommandon är för närvarande det primära gränssnittet mellan dessa lager.
+Deploymentverktyg får därför anropa exempelvis Dokumentverkstads
+backup- och verifieringskommandon utan att motsvarande schemaläggning eller
+transport byggs in i applikationen.
+
+Ett framtida administrations-API kan exponera samma applikationsoperationer,
+men ett sådant API ska vara ett alternativt gränssnitt till samma
+backupfunktionalitet, inte platsen där backupens externa driftpolicy
+implementeras.
+
+Denna gräns gör att exempelvis systemd och rclone kan ersättas av andra
+verktyg, och Dropbox av annan lagring, utan att Archive-formatet eller
+Dokumentverkstads backupmodell behöver förändras.
+
 ---
 
 # Documents
