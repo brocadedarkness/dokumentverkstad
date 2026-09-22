@@ -21,7 +21,19 @@ aktivering görs i 10.3.2 enligt [DEPLOYMENT.md](DEPLOYMENT.md).
 
 # Automatiserad backup
 
-Nattliga backups till konfigurerbar katalog, exempelvis en Dropbox-synkad katalog. Retention först kanske fem senaste; senare eventuellt daily/weekly/monthly-generationer.
+Grundbehovet är flyttat till Iteration 10.4: systemd-timer, befintligt
+ZIP-format, extern transport och verifierad återläsning/restore. Alla externa
+generationer behålls tills administratören gallrar manuellt efter verifiering.
+Automatisk gallring och daily/weekly/monthly-policy är möjliga post-MVP-behov.
+
+# Tydligare AI-jobbstatus i Document-vyn
+
+Vid verklig fjärranvändning syntes det inte tillräckligt tydligt i
+Document-vyn att en AI-analys var `planned` eller `running`. Visa senare
+tydlig återkoppling utifrån befintlig AiRun-status, åtskild från review-status,
+så användaren kan lämna klienten och återkomma utan att undra om jobbet startat.
+Detta är en framtida UX-punkt, uttryckligen utanför 10.4 och MVP-acceptansens
+scope. Ingen ny jobbmodell eller frontendarkitektur behövs för att utreda den.
 
 # AI max-token override och bättre kostnadsuppskattning
 

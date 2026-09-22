@@ -1827,6 +1827,98 @@ Iteration 9 är klar när följande scenario fungerar:
 
 # Iteration 10 – Ett kunskapsrum, flera klienter
 
+## Verifierat nuläge inför 10.4
+
+Enligt verifiering i verklig drift fungerar nu Linux-VPS-modellen: ett
+kanoniskt server-Archive har migrerats med backup/restore och Runtime/SQLite
+har byggts om. `https://verkstad.asdr.se` fungerar genom Caddy med publikt
+TLS-certifikat och Basic Auth. Appen lyssnar endast på `127.0.0.1:8000`.
+Web och worker kör som separata, autostartaktiverade systemd-tjänster.
+Extern mobil klient har verifierats för läsning och skrivning. AI har
+startats från fjärrklient, körts av workern mot OpenAI och gett färdiga
+resultat. API-nyckeln finns i serverns skyddade EnvironmentFile, utanför Git.
+
+Vid verklig restore som root blev Archive root-ägt: läsning fungerade men
+review/save gav PermissionError. Korrekt ownership under
+`/var/lib/dokumentverkstad` löste problemet. 10.4 ska förebygga upprepning
+genom restore som serviceanvändaren, inte genom ändrat Archive-format.
+
+Detta är rapporterad driftverifiering, inte en ny fjärrkontroll från repoarbetet.
+Reboot, samlad tvåklientsacceptans och off-server-återställning återstår
+som uttryckliga godkännandepunkter nedan.
+
+## Återstående deliterationer
+
+### 10.4 – Off-server backup och restore
+
+**Mål:** det kanoniska Archive ska inte bara finnas på VPS-disken.
+
+Minsta lösning är en systemd-timer, befintligt ZIP-backupformat och ett
+litet deploymentlager med rclone till valfri konfigurerad extern lagring.
+Ingen scheduler eller leverantörskoppling införs i applikationen.
+
+Repoimplementationen omfattar:
+
+- daglig unattended körning med systemd och journald-diagnostik;
+- tillfällig frysning av web/worker under lokal backup, upptining före transport
+  samt upptiningsförsök även vid fel (systemd med cgroup v2);
+- unika externa generationer, återläsning, SHA-256-jämförelse och provrestore
+  inklusive SQLite-rebuild före verifieringsmarkering;
+- bevarande av samtliga externa generationer, utan automatisk gallring,
+  synkronisering eller överskrivning av äldre backups;
+- bibehållen exkludering av Runtime, ingest och secrets;
+- fristående `verify-backup` och instruktioner för återställning till annan
+  installation; restore-unit som kör som serviceanvändaren;
+- tester för lyckad återställning, felaktig backup, överföringsfel och
+  oförändrade äldre generationer.
+
+Användaren väljer separat fysisk/logisk lagring, tillhandahåller credentials
+och konfigurerar namngiven rclone-remote utanför Archive/Git. Timer och
+transport måste aktiveras och verifieras på servern enligt DEPLOYMENT.md.
+En lokal katalog på samma VPS är inte off-server-backup. Normal schemalagd
+backup kräver ingen SSH-session.
+
+**Status:** repoartefakter implementerade; extern lagring, serveraktivering
+och verklig restoreverifiering återstår. Lokala tester ersätter inte dessa.
+
+**Klart när:** minst en schemalagd backup har lästs tillbaka från den valda
+externa lagringen, flera generationer finns kvar och en generation har
+återställts i en separat installation med fungerande index och skrivbara
+Knowledge Objects för serviceanvändaren. Lagringsutrymme och en manuell
+gallringsrutin ska vara beslutade; äldre fungerande backups får aldrig
+raderas innan en ny är verifierad.
+
+### 10.5 – MVP acceptance och driftverifiering
+
+En kort acceptansrunda, inte en ny feature-iteration. Dokumentera datum,
+kodrevision, klienter och resultat för varje punkt; lämna ej genomförda
+punkter öppna:
+
+- [ ] Caddy, web och worker återkommer automatiskt efter serverreboot.
+- [ ] HTTPS och Basic Auth fungerar efter reboot; obehörig åtkomst stoppas.
+- [ ] Tjänsten fungerar från minst två olika klienter.
+- [ ] Document/PDF-visning fungerar.
+- [ ] Capture/Notering fungerar.
+- [ ] PDF-upload fungerar från fjärrklient och blir Document genom automatisk
+  ingest utan manuellt `process-ingest`.
+- [ ] AI startas från fjärrklient, klienten stängs och workern slutför jobbet.
+- [ ] AI-review och skrivning av Knowledge Objects fungerar.
+- [ ] Serverbackup skapas automatiskt enligt 10.4.
+- [ ] Minst en off-server-backup är återläst och verifierad; äldre
+  generationer finns kvar.
+- [ ] Restore från extern lagring görs till en separat installation.
+- [ ] Runtime/SQLite kan återskapas från återställt Archive.
+- [ ] Restore/deployment ger rätt ownership och serviceanvändaren kan spara
+  och redigera Knowledge Objects.
+- [ ] Hela befintliga testsviten passerar i målmiljön.
+
+**Status: EJ GODKÄND.** När samtliga punkter är godkända ska planen uttryckligen
+markera **MVP COMPLETE** och ange datum och verifierad revision. Markeringen
+får inte sättas enbart för att repoimplementationen är färdig.
+
+AI-jobbens planned/running-synlighet i Document-vyn ligger i BACKLOG och
+implementeras inte i 10.4 eller som generell polish i 10.5.
+
 ## Syfte
 
 Hittills har Dokumentverkstad huvudsakligen körts på samma dator som användaren arbetar vid.

@@ -62,6 +62,8 @@ def create_backup(config: AppConfig, output_dir: str | Path | None = None) -> Ba
     archive_root = config.archive_root.resolve()
     counts = count_archive_objects(archive)
     destination_dir = Path(output_dir) if output_dir else Path.cwd()
+    if destination_dir.resolve().is_relative_to(archive_root):
+        raise BackupError("Backupkatalogen får inte ligga i Archive.")
     destination_dir.mkdir(parents=True, exist_ok=True)
     destination = _unique_backup_path(destination_dir)
 
@@ -78,6 +80,7 @@ def create_backup(config: AppConfig, output_dir: str | Path | None = None) -> Ba
             manifest = _manifest(created_at=_timestamp(), counts=counts)
             backup.writestr(MANIFEST_PATH, _json_bytes(manifest))
             backup.writestr(PORTABLE_CONFIG_PATH, _json_bytes(_portable_config(config)))
+            backup.writestr(ARCHIVE_PREFIX, b"")
             for path in _archive_files(archive_root):
                 relative = path.relative_to(archive_root).as_posix()
                 backup.write(path, f"{ARCHIVE_PREFIX}{relative}")
@@ -118,6 +121,8 @@ def restore_backup(
         _extract_archive_to_staging(source, staging)
         Archive(staging).initialize()
         _verify_restored_archive(staging)
+        if count_archive_objects(Archive(staging)) != counts:
+            raise BackupError("Archive-innehållet stämmer inte med backupmanifestets antal.")
 
         if force and archive_root.exists():
             shutil.rmtree(archive_root)
@@ -153,6 +158,8 @@ def validate_backup(backup_path: str | Path) -> tuple[dict[str, object], dict[st
             if not any(name.startswith(ARCHIVE_PREFIX) for name in names):
                 raise BackupError("Archive-root saknas i backupen.")
             manifest = json.loads(backup.read(MANIFEST_PATH).decode("utf-8"))
+            if not isinstance(manifest, dict):
+                raise BackupError("Backupmanifestet har fel struktur.")
             if manifest.get("backup_format_version") != BACKUP_FORMAT_VERSION:
                 raise BackupError("Backupformatet stöds inte.")
             portable_config = {}
@@ -248,6 +255,8 @@ def _json_bytes(data: dict[str, object]) -> bytes:
 
 
 def _validate_member_names(names: list[str]) -> None:
+    if len(names) != len(set(names)):
+        raise BackupError("Backupen innehåller dubbla filsökvägar.")
     for name in names:
         normalized = name.replace("\\", "/")
         path = PurePosixPath(normalized)

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import os
 import shutil
 import unittest
 from zipfile import ZipFile
@@ -20,6 +22,63 @@ from helpers import workspace_tempdir, write_minimal_pdf
 
 
 class BackupRestoreTests(unittest.TestCase):
+    def test_empty_archive_round_trip(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            backup = create_backup(_config(root / "source"), root / "backups")
+            result = restore_backup(backup.path, _config(root / "target"))
+            self.assertEqual(result.counts.documents, 0)
+            self.assertTrue(result.index_path.is_file())
+
+    def test_backup_output_inside_archive_is_rejected(self) -> None:
+        with workspace_tempdir() as tmp:
+            config = _config(Path(tmp))
+            with self.assertRaises(BackupError):
+                create_backup(config, config.archive_root / "backups")
+
+    def test_wrong_manifest_structure_and_duplicate_members_are_rejected(self) -> None:
+        with workspace_tempdir() as tmp:
+            path = Path(tmp) / "invalid.zip"
+            with ZipFile(path, "w") as backup:
+                backup.writestr("backup-manifest.json", "[]")
+                backup.writestr("archive/", "")
+            with self.assertRaises(BackupError):
+                validate_backup(path)
+            with ZipFile(path, "w") as backup:
+                backup.writestr("backup-manifest.json", '{"backup_format_version":"1"}')
+                backup.writestr("archive/", "")
+                with self.assertWarns(UserWarning):
+                    backup.writestr("archive/", "")
+            with self.assertRaises(BackupError):
+                validate_backup(path)
+
+    def test_count_mismatch_is_rejected_before_replacing_archive(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = _config(root)
+            existing = Archive(config.archive_root).create_document("Keep me")
+            path = root / "invalid.zip"
+            with ZipFile(path, "w") as backup:
+                backup.writestr("backup-manifest.json", json.dumps({
+                    "backup_format_version": "1", "counts": {"documents": 1}
+                }))
+                backup.writestr("archive/", "")
+            with self.assertRaises(BackupError):
+                restore_backup(path, config, force=True)
+            self.assertEqual(Archive(config.archive_root).get_document(existing.id).title, "Keep me")
+
+    @unittest.skipUnless(hasattr(os, "getuid"), "POSIX ownership check")
+    def test_restored_files_are_owned_by_restoring_user(self) -> None:
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            _realistic_archive(root / "source")
+            backup = create_backup(_config(root / "source"), root)
+            config = _config(root / "target")
+            restore_backup(backup.path, config)
+            for directory in (config.archive_root, config.runtime_root):
+                for path in directory.rglob("*"):
+                    self.assertEqual(path.stat().st_uid, os.getuid())
+
     def test_backup_contains_archive_manifest_and_excludes_secrets_runtime_ingest(self) -> None:
         with workspace_tempdir() as tmp:
             root = Path(tmp)

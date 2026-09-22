@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Dokumentverkstad off-server backup
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=15m
+Persistent=true
+Unit=dokumentverkstad-backup.service
+
+[Install]
+WantedBy=timers.target

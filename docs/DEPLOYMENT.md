@@ -6,6 +6,25 @@ Detta dokument beskriver den aktuella produktionsmiljön för Dokumentverkstad.
 
 Till skillnad från arkitekturen är deployment-specifikationen avsedd att kunna förändras över tid när hårdvara, operativsystem eller externa tjänster byts ut.
 
+## Verifierat nuläge inför 10.4
+
+Enligt verklig driftverifiering körs nu det kanoniska Archive på Linux-VPS,
+migrerat med Dokumentverkstads backup/restore och återskapat Runtime/index.
+`https://verkstad.asdr.se` fungerar med Caddy, publikt TLS-certifikat och
+Basic Auth. Webben lyssnar endast på `127.0.0.1:8000`; web och worker kör
+som separata systemd-tjänster med autostart aktiverad. Extern mobil klient
+har verifierats för läsning, skrivning och AI-jobb som slutförts av workern
+mot OpenAI. API-nyckeln finns i skyddad EnvironmentFile, inte i Git.
+
+Restore som root gav root-ägda Archive-filer och PermissionError vid
+review/save. Ägarskapet korrigerades manuellt. Rutinen i 10.4 nedan kör
+restore som serviceanvändaren och verifierar även skrivning.
+
+10.3-avsnitten nedan är installations- och återinstallationsreferens; de
+innebär inte att den redan fungerande installationen ska göras om. Off-server
+backup är förberedd i repo men inte aktiverad eller fjärrverifierad genom
+detta arbete. Samlad reboot-/tvåklientsacceptans återstår i 10.5.
+
 ---
 
 # Mål
@@ -44,8 +63,8 @@ Målet är att utvecklingsmiljön och huvudservern ska använda samma kodbas. Sk
 
 Syfte: första förberedelse för drift på en liten Linux-VPS.
 
-Denna grund från 10.1 kompletteras av systemd-avsnittet och förberedelserna
-för Caddy i 10.3.1 nedan. Extern aktivering sker först i 10.3.2.
+Denna grund från 10.1 kompletteras av systemd-avsnittet och Caddy-rutinen
+från 10.3 nedan. Extern aktivering är genomförd enligt nuläget ovan.
 
 Rekommenderad separation mellan kod och persistent data:
 
@@ -493,7 +512,8 @@ credentials lagras separat enligt nästa avsnitt.
 
 Dropbox används som synkronisering, inte som backup.
 
-Servern ska kompletteras med regelbunden backup till annan lagring än den aktiva serverdisken.
+Servern ska aktivera regelbunden backup till annan lagring än den aktiva
+serverdisken enligt 10.4 nedan.
 
 Arkivet är den viktigaste tillgången och ska kunna återställas oberoende av serverns runtime-data.
 
@@ -502,6 +522,342 @@ Dokumentverkstads inbyggda backup är en portabel ZIP-förpackning av Archive oc
 Restore ska göras till en ny eller tom installation, eller med ett uttryckligt `--force`-val efter att backupfilen har validerats. Efter restore byggs Runtime/index upp igen från Archive.
 
 Backupen återställer inte absoluta sökvägar, host, port eller andra maskinspecifika driftval från den gamla datorn. Den nya installationens lokala konfiguration avgör var Archive, Runtime och secrets ligger.
+
+# 10.4 – Off-server backup och restore
+
+## Ansvar och avgränsning
+
+I repo finns `deploy/backup/offserver_backup.py`, backup-service/timer,
+`backup.env.example`, en separat restore-service och CLI `verify-backup`.
+Applikationens befintliga ZIP-format (version 1) används oförändrat.
+Archive är auktoritativt; Runtime/SQLite, ingest-kön, OpenAI-credentials,
+Caddy-credentials och rclone-konfiguration ingår inte. Portabel AI-konfiguration
+ingår, men inte serverns absoluta sökvägar eller nätverksinställningar.
+
+Administratören måste välja en lagringsplats som överlever förlust av hela
+VPS-disken, skapa åtkomst och konfigurera en namngiven rclone-remote.
+Ingen specifik leverantör krävs. En remote som i praktiken pekar tillbaka
+till samma VPS-disk uppfyller inte kravet; det kan skriptet inte avgöra.
+Välj skyddad transport och begränsad åtkomst till en dedikerad backupkatalog.
+ZIP-filen är inte krypterad. Om lagringsplatsen kräver klientkryptering kan
+transportlagrets rclone crypt användas; förvara då även dess nycklar separat
+från VPS och Archive så att restore är möjlig efter total serverförlust.
+
+## Körning, verifiering och generationer
+
+Timern kör dagligen omkring 03:30 i serverns tidszon, med upp till 15 minuters
+slumpfördröjning. `Persistent=true` tar igen en missad körning efter boot.
+Lokal kopiering begränsas till 15 minuter, varefter felvägen tinar upp
+tjänsterna. Justera gränsen först efter mätning på verkligt Archive.
+Systemd kör inte samma service parallellt med sig själv; kör inte skriptets
+faser manuellt eller en annan backupskrivare samtidigt.
+
+1. Preflight kontrollerar konfiguration, separata datakataloger, rclone och
+   frånvaro av symlänkar i Archive. Secrets måste ligga utanför Archive.
+2. Web och worker fryses tillfälligt med systemd/cgroup v2. Befintligt `create_backup` skapar och CRC-/manifest-
+   verifierar en lokal ZIP under `/var/lib/dokumentverkstad/backups/<generation>/`.
+3. Web och worker tinas upp innan nätöverföringen. `ExecStopPost` begär
+   upptining även om backupsteget misslyckas eller timeout inträffar.
+4. ZIP kopieras till `<remote>/<unik-generation>/<backupfil>.zip` med
+   `rclone copyto --immutable`; ingen `sync`, `delete` eller extern gallring körs.
+5. Hela ZIP-filen laddas ned igen. SHA-256 måste överensstämma med den lokala
+   filen. Därefter görs riktig provrestore i en tillfällig separat katalog:
+   ZIP/manifest/sökvägar, läsbara domänposter, manifestets objektantal och
+   SQLite-rebuild kontrolleras.
+6. Först därefter laddas `verified.json` upp till samma generation. Lokal
+   `last-success.json` uppdateras och just den lyckade lokala ZIP-generationen
+   tas bort. Äldre externa generationer rörs aldrig.
+
+En ZIP utan verifieringsmarkering är en ofullständig/ej verifierad generation.
+Kontrollera alltid nedladdad backup igen vid restore; markeringen är ett
+kvitto på en tidigare kontroll, inte en digital signatur eller garanti mot
+senare ändring. Varje generation är självständig; inga inkrementella kedjor.
+
+Backupen är inte en transaktionell snapshot medan tjänsterna skriver.
+Frysningen hindrar ytterligare skrivningar under kopieringen utan att döda
+en pågående skrivning i produktions-Archive. Använd inte direkt `backup`
+mot ett aktivt Archive för schemalagd serverbackup. Undvik manuella
+CLI-skrivningar och service-/configändringar under fönstret. Systemd kan
+automatiskt tina upp en unit om ett annat administrationsjobb körs mot den.
+
+Frysning kan fånga en ofärdig post; ogiltig JSON eller felaktiga objektantal
+underkänns av backup/provrestore och generationen får ingen verifieringsmarkering.
+Det finns ingen generell transaktionsgaranti över flera Archive-filer.
+Välj ett lugnt tidsfönster utan aktiva skrivningar eller AI-jobb och granska
+felstatus. Requests och externa AI-anrop kan hinna få timeout under pausen;
+ingen process dödas av backupen. Ingen ny jobbscheduler eller låsarkitektur
+införs. Caddy fortsätter skydda tjänsten men klienter kan tillfälligt få vänta
+eller få proxy-timeout. Om pausen blir lång är annan snapshotteknik ett
+separat driftsbeslut, inte en ny Archive-modell.
+
+Servicen förutsätter systemd 246+ med unified cgroup v2 och normalt aktiva
+web/worker. Saknat stöd ska ge fel, aldrig falla tillbaka till live-kopiering.
+**Stoppa timern och invänta/stoppa pågående backup-service före underhåll**;
+kontrollera att båda app-tjänsterna är upptinade innan arbetet fortsätter.
+
+Alla externa generationer behålls i MVP. Administratören måste följa utrymme
+och bestämma manuell retention, exempelvis minst sju senaste verifierade
+generationer. Gallra endast explicit valda äldre generationer efter att en
+ny generation och dess restore har verifierats; ingen automatisk
+lagringslivscykel hos leverantören får radera dem i förtid. Vid transportfel
+ligger lokal ZIP kvar för diagnos och eventuell manuell återföring. Nästa
+timerkörning skapar en ny generation och återför inte automatiskt gamla
+misslyckade försök. Kontrollera även lokalt diskutrymme; provrestore kräver
+plats för ZIP, nedladdad ZIP, staging och återställt Archive med index.
+
+## Förbered servern (manuellt, ingen aktivering från repoarbetet)
+
+Följande förutsätter den dokumenterade Debian/Ubuntu-layouten, installerad
+app i `/opt/dokumentverkstad/.venv` och användaren `dokumentverkstad`.
+
+```sh
+sudo apt install rclone
+rclone version
+systemctl --version
+test -f /sys/fs/cgroup/cgroup.controllers
+sudo install -d -o root -g dokumentverkstad -m 750 /etc/dokumentverkstad
+sudo install -d -o dokumentverkstad -g dokumentverkstad -m 700 /var/lib/dokumentverkstad/backups
+sudo install -d -o dokumentverkstad -g dokumentverkstad -m 700 /etc/dokumentverkstad/rclone
+if ! sudo test -e /etc/dokumentverkstad/rclone/rclone.conf; then
+  sudo install -o dokumentverkstad -g dokumentverkstad -m 600 /dev/null /etc/dokumentverkstad/rclone/rclone.conf
+fi
+sudo -u dokumentverkstad rclone --config /etc/dokumentverkstad/rclone/rclone.conf config
+if ! sudo test -e /etc/dokumentverkstad/backup.env; then
+  sudo install -o root -g dokumentverkstad -m 640 /opt/dokumentverkstad/deploy/systemd/backup.env.example /etc/dokumentverkstad/backup.env
+fi
+sudo editor /etc/dokumentverkstad/backup.env
+```
+
+Skapa inte om en befintlig `rclone.conf` med `/dev/null`; det tömmer filen.
+Vid befintlig konfiguration: granska och använd den, eller välj en separat ny
+fil. Konfigurationsdialogen och eventuell initial extern auktorisering görs
+av administratören. Rclone-filen och dess privata underkatalog ägs av
+serviceanvändaren så att tokenförnyelse kan sparas via temporär fil och rename.
+Den överordnade `/etc/dokumentverkstad` ägs av root. Använd inte
+credentials i kommandorader, repo eller loggar. Unattended åtkomst måste fungera
+utan lösenordsprompt. Säkerhetskopiera återställningscredentials separat.
+
+Sätt i `backup.env`, med det namn och den katalog du själv valt:
+
+```text
+DOKUMENTVERKSTAD_BACKUP_REMOTE=offserver:dokumentverkstad
+RCLONE_CONFIG=/etc/dokumentverkstad/rclone/rclone.conf
+```
+
+`offserver` är ett exempel på eget remote-namn, inte en förvald tjänst.
+Rclone och dess konfiguration är deploymentberoenden, inte Python- eller
+Archive-beroenden. Backupservicen läser samma `dokumentverkstad.env` som web
+och worker så att lagringsöverskrivningar överensstämmer. Den behöver ingen
+AI-nyckel för backup och skickar inte environment till ZIP-filen. Håll alla
+secrets utanför Archive, även om filnamnet inte heter `secrets.*`.
+
+Kontrollera remote utan att skapa eller radera backupfiler:
+
+```sh
+sudo -u dokumentverkstad rclone --config /etc/dokumentverkstad/rclone/rclone.conf lsf offserver:dokumentverkstad --max-depth 1
+sudo install -o root -g root -m 644 /opt/dokumentverkstad/deploy/systemd/dokumentverkstad-backup.service /etc/systemd/system/
+sudo install -o root -g root -m 644 /opt/dokumentverkstad/deploy/systemd/dokumentverkstad-backup.timer /etc/systemd/system/
+sudo install -o root -g root -m 644 /opt/dokumentverkstad/deploy/systemd/dokumentverkstad-restore@.service /etc/systemd/system/
+sudo systemd-analyze verify /etc/systemd/system/dokumentverkstad-backup.service /etc/systemd/system/dokumentverkstad-backup.timer /etc/systemd/system/dokumentverkstad-restore@.service
+sudo systemctl daemon-reload
+```
+
+Granska paths, servicekonto, rclone-version, cgroup v2 och serverns tidszon. Koden och
+unit-filerna måste vara administratörskontrollerade; endast systemctl-stegen
+kör med utökade rättigheter (`+`), själva backup/transport kör som
+`dokumentverkstad` med umask 0077. En annan installation kan anpassa
+deploymentartefakternas paths utan ändring av Archive-formatet.
+
+I ett valt underhållsfönster, när konfiguration och extern destination är klara:
+
+```sh
+sudo systemctl start dokumentverkstad-backup.service
+systemctl status dokumentverkstad-backup.service --no-pager
+journalctl -u dokumentverkstad-backup.service -n 100 --no-pager
+systemctl is-active dokumentverkstad-web.service dokumentverkstad-worker.service
+systemctl show dokumentverkstad-web.service dokumentverkstad-worker.service -p FreezerState
+sudo cat /var/lib/dokumentverkstad/backups/last-success.json
+```
+
+Kräv lyckad återläsning/provrestore och `backup verified` före aktivering av timern:
+
+```sh
+sudo systemctl enable --now dokumentverkstad-backup.timer
+systemctl list-timers dokumentverkstad-backup.timer --all
+```
+
+Normal backupdrift kräver därefter ingen SSH eller öppen klient. SSH/annan
+administrationsväg används bara vid installation, felsökning och restore.
+
+## Status och fel
+
+```sh
+systemctl show dokumentverkstad-backup.service -p Result -p ExecMainStatus
+systemctl status dokumentverkstad-backup.timer --no-pager
+journalctl -u dokumentverkstad-backup.service --since yesterday --no-pager
+df -h /var/lib/dokumentverkstad
+```
+
+En avslutad oneshot är normalt `inactive (dead)`; kontrollera resultat och
+journal, inte bara `is-active`. `last-success.json` visar senaste fullständigt
+verifierade generation och tid. Gammalt kvitto betyder inte att dagens körning
+lyckats. Loggen visar snapshot, upload, readback, restore check och marker upload.
+Rclone-fel ger exitkod och fas; providerutdata undertrycks för att inte läcka
+credentials eller privata adresser. Kontrollera konfiguration, nätåtkomst,
+behörigheter och kvot i en skyddad administrativ session, utan debugdumpning.
+Automatisk larmleverans ingår inte; granska journal och kvittots ålder regelbundet.
+
+Efter körning ska `FreezerState=running` gälla för båda app-tjänsterna.
+Vid fel i upptiningen, kör:
+
+```sh
+sudo systemctl thaw dokumentverkstad-web.service dokumentverkstad-worker.service
+```
+
+Kontrollera sedan journalen. Vid faktisk serverreboot startar de aktiverade
+app-tjänsterna normalt på nytt; frysningen är inte beständig.
+
+## Restore från off-server till separat installation
+
+Detta är en provåterställning utan produktionsskrivning. Använd en separat
+maskin om målet är att verifiera återställning efter total VPS-förlust. Samma
+rutin kan först övas i nedanstående isolerade katalog på befintlig server.
+Installera samma appversion/beroenden, serviceanvändare och restore-unit där.
+Återskapa transportcredentials från den separat bevarade kopian.
+
+Välj en verklig generation och backupfil från remote-listningen; ersätt
+`GENERATION` och `BACKUPFIL.zip` nedan. Använd ett nytt instansnamn/katalog
+om `acceptance` redan innehåller data. Inget `--force` behövs.
+
+```sh
+sudo install -d -o root -g dokumentverkstad -m 750 /var/lib/dokumentverkstad-restore
+sudo install -d -o dokumentverkstad -g dokumentverkstad -m 750 /var/lib/dokumentverkstad-restore/acceptance
+sudo -u dokumentverkstad rclone --config /etc/dokumentverkstad/rclone/rclone.conf copyto offserver:dokumentverkstad/GENERATION/BACKUPFIL.zip /var/lib/dokumentverkstad-restore/acceptance/backup.zip --immutable
+sudo -u dokumentverkstad rclone --config /etc/dokumentverkstad/rclone/rclone.conf copyto offserver:dokumentverkstad/GENERATION/verified.json /var/lib/dokumentverkstad-restore/acceptance/verified.json --immutable
+sudo -u dokumentverkstad sha256sum /var/lib/dokumentverkstad-restore/acceptance/backup.zip
+sudo -u dokumentverkstad cat /var/lib/dokumentverkstad-restore/acceptance/verified.json
+sudo -u dokumentverkstad /opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad verify-backup /var/lib/dokumentverkstad-restore/acceptance/backup.zip
+sudo editor /var/lib/dokumentverkstad-restore/acceptance/dokumentverkstad.toml
+```
+
+**Avbryt om SHA-256 inte exakt motsvarar `sha256` i kvittot eller
+`verify-backup` misslyckas.** Detta CLI-kommando kontrollerar ZIP-CRC, manifest
+och sökvägar utan att läsa installationsconfig eller skriva Archive/Runtime.
+Det ersätter inte nästa stegs verkliga restore och funktionella kontroll.
+
+Skriv följande isolerade TOML, inte produktionsconfigens paths:
+
+```toml
+archive_root = "/var/lib/dokumentverkstad-restore/acceptance/archive"
+runtime_root = "/var/lib/dokumentverkstad-restore/acceptance/runtime"
+ingest_source = "/var/lib/dokumentverkstad-restore/acceptance/ingest"
+secrets_path = "/var/lib/dokumentverkstad-restore/acceptance/secrets.toml"
+encrypted_secrets_path = "/var/lib/dokumentverkstad-restore/acceptance/secrets.enc"
+host = "127.0.0.1"
+port = 8001
+```
+
+```sh
+sudo chown root:dokumentverkstad /var/lib/dokumentverkstad-restore/acceptance/dokumentverkstad.toml
+sudo chmod 640 /var/lib/dokumentverkstad-restore/acceptance/dokumentverkstad.toml
+sudo systemctl start dokumentverkstad-restore@acceptance.service
+systemctl status dokumentverkstad-restore@acceptance.service --no-pager
+journalctl -u dokumentverkstad-restore@acceptance.service -n 100 --no-pager
+sudo -u dokumentverkstad /opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /var/lib/dokumentverkstad-restore/acceptance/dokumentverkstad.toml rebuild-index
+sudo -u dokumentverkstad /opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /var/lib/dokumentverkstad-restore/acceptance/dokumentverkstad.toml status
+sudo find /var/lib/dokumentverkstad-restore/acceptance/archive /var/lib/dokumentverkstad-restore/acceptance/runtime ! -user dokumentverkstad -print
+```
+
+Restore bygger redan index; det explicita `rebuild-index` visar att Runtime
+kan återskapas igen. Sista kommandot ska inte lista felägda filer. Kontrollera
+också att administrativa shellmiljön inte har `DOKUMENTVERKSTAD_*`-överskrivningar
+som pekar tillbaka på produktion när CLI körs. Restore-uniten läser avsiktligt
+inte produktions-EnvironmentFile och tillåter skrivning endast under sin instans.
+
+Starta vid behov provwebben lokalt med `run --no-worker` som serviceanvändaren
+och provconfigen. Använd skyddad administrationsåtkomst till loopback:8001;
+exponera inte testinstallationen publikt och ändra inte fungerande Caddy.
+Kontrollera dokument/PDF, noteringar, historik och AI-resultat. **Skapa och
+redigera en testnotering i provinstallationen som samma serviceanvändare**,
+och verifiera att produktions-Archive är oförändrat. Starta inte provworkern
+eller nya AI-jobb under en ren återställningskontroll.
+
+## Ownership: orsak, förebyggande och reparation
+
+ZIP-formatet lagrar inte en portabel serviceidentitet. Restore extraherar och
+kopierar filer som den användare som kör processen. `sudo ... restore` som
+root gav därför root-ägda filer i verklig drift. Läsbarhet eller fungerande
+index är inte bevis på att review/save kan skriva.
+
+Restore-uniten ovan löser detta genom `User=dokumentverkstad` och
+`Group=dokumentverkstad`, utan automatisk chown eller ändrat Archive-format.
+Även direkt CLI-restore ska köras med `sudo -u dokumentverkstad` till kataloger
+som kontot får skriva i. Kör rebuild som samma användare. För ny produktions-
+installation: skapa datakatalogerna med rätt ägare före restore och starta
+web/worker först efter kontroll av både läsning och skrivning.
+
+Om en tidigare root-restore måste repareras: stoppa backup-timern, stoppa
+eventuell backupkörning, därefter web och worker. Kontrollera först att configen
+verkligen använder nedanstående data och att inga oväntade symlänkar/mounts
+pekar på annan data. Kör sedan endast mot den verifierade dataroten:
+
+```sh
+sudo systemctl stop dokumentverkstad-backup.timer dokumentverkstad-backup.service
+sudo systemctl stop dokumentverkstad-web.service dokumentverkstad-worker.service
+sudo chown -R dokumentverkstad:dokumentverkstad /var/lib/dokumentverkstad
+sudo find /var/lib/dokumentverkstad -type d -exec chmod 750 {} \;
+sudo find /var/lib/dokumentverkstad -type f -exec chmod 640 {} \;
+sudo systemctl start dokumentverkstad-web.service dokumentverkstad-worker.service
+```
+
+Kör bara backup-stop-kommandot om dessa units är installerade. Skyddade filer
+under `/etc/dokumentverkstad` och Caddy ändras inte. Verifiera review/save innan
+timern startas igen med `sudo systemctl start dokumentverkstad-backup.timer`.
+Ingen generell root-chown-logik läggs i applikationen.
+
+## Lokal kontra verklig verifiering
+
+Lokalt testas ZIP-format, tomt Archive, valideringsfel, oförändrat mål vid
+felaktig restore, transportfel, skadad återläsning, flera generationer och
+restore/rebuild med skrivbar notering. Transporten ersätts i enhetstesterna
+med en lokal testdubbel; det bevisar inte nätverk eller extern lagring.
+POSIX-testet för ägare körs bara på POSIX. Kör hela sviten:
+
+```sh
+python -m unittest discover -s tests
+```
+
+Verifierat lokalt 2026-09-22 på Windows/Python 3.13: hela sviten kördes med
+183 tester, 182 godkända och ett POSIX-ownership-test överhoppat. En separat
+integration med rclone 1.75.1 mot en lokal alias-remote skapade och verifierade
+två generationer med återläsning och provrestore. Ingen extern lagring eller
+credential användes. Linux/systemd finns inte i denna lokala testmiljö.
+
+På Linux måste dessutom units valideras, rättigheter och frysning/upptining
+testas, rclone köras mot den valda lagringen och minst en schemalagd generation
+återställas på separat installation. Testa även otillgänglig remote i en
+separat provkonfiguration: misslyckad körning ska synas i journalen, äldre
+backups vara orörda och web/worker ha tinats upp. Dokumentera datum, revision,
+generation och resultat. Aktiveringen och 10.5 är inte godkända enbart genom
+lokala tester.
+
+Transport- och servicebeteendet bygger på officiella referenser:
+[rclone copyto](https://rclone.org/commands/rclone_copyto/),
+[rclone crypt](https://rclone.org/crypt/) och
+[systemd.service](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html),
+samt [systemctl freeze/thaw](https://www.freedesktop.org/software/systemd/man/latest/systemctl.html).
+
+# 10.5 – MVP acceptance och driftverifiering
+
+Använd den fullständiga checklistan i IMPLEMENTATION_PLAN.md. Den omfattar
+reboot av Caddy/web/worker, HTTPS/auth inklusive obehöriga försök, minst två
+klienter, dokument/PDF, notering, fjärrupload med automatisk ingest, AI med
+stängd klient, review/save, schemalagd backup, verifierad off-server-generation,
+separat restore, rebuild, ownership och hela testsviten.
+
+Registrera faktisk körning och resultat, inte bara att kommandon finns.
+10.5 inför inga nya features. Först efter godkänd checklista kan planen få
+slutstatus **MVP COMPLETE**.
 
 ---
 

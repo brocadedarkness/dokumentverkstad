@@ -1,0 +1,24 @@
+[Unit]
+Description=Dokumentverkstad verified off-server backup
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=dokumentverkstad
+Group=dokumentverkstad
+WorkingDirectory=/opt/dokumentverkstad
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/dokumentverkstad/dokumentverkstad.env
+EnvironmentFile=/etc/dokumentverkstad/backup.env
+UMask=0077
+ExecStartPre=/opt/dokumentverkstad/.venv/bin/python deploy/backup/offserver_backup.py preflight --config /opt/dokumentverkstad/dokumentverkstad.toml --spool /var/lib/dokumentverkstad/backups
+ExecStartPre=/usr/bin/test -f /sys/fs/cgroup/cgroup.controllers
+ExecStartPre=+/usr/bin/systemctl freeze dokumentverkstad-web.service dokumentverkstad-worker.service
+ExecStart=/usr/bin/timeout 15m /opt/dokumentverkstad/.venv/bin/python deploy/backup/offserver_backup.py snapshot --config /opt/dokumentverkstad/dokumentverkstad.toml --spool /var/lib/dokumentverkstad/backups
+ExecStartPost=+/usr/bin/systemctl thaw dokumentverkstad-web.service dokumentverkstad-worker.service
+ExecStartPost=/opt/dokumentverkstad/.venv/bin/python deploy/backup/offserver_backup.py upload --config /opt/dokumentverkstad/dokumentverkstad.toml --spool /var/lib/dokumentverkstad/backups
+# Also unfreeze writers after snapshot failure, cancellation, or timeout.
+ExecStopPost=+/usr/bin/systemctl thaw dokumentverkstad-web.service dokumentverkstad-worker.service
+TimeoutStartSec=3h
+TimeoutStopSec=2min

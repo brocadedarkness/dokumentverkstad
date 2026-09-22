@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from .archive import Archive
-from .backup import BackupError, create_backup, restore_backup
+from .backup import BackupError, create_backup, restore_backup, verify_backup
 from .config import (
     AppConfig,
     ConfigurationError,
@@ -58,6 +58,9 @@ def main(argv: list[str] | None = None) -> None:
     backup_parser = subparsers.add_parser("backup")
     backup_parser.add_argument("--output-dir", help="Katalog där backupfilen skapas")
 
+    verify_parser = subparsers.add_parser("verify-backup")
+    verify_parser.add_argument("backup_file")
+
     restore_parser = subparsers.add_parser("restore")
     restore_parser.add_argument("backup_file")
     restore_parser.add_argument("--force", action="store_true")
@@ -70,6 +73,11 @@ def main(argv: list[str] | None = None) -> None:
     command = args.command or "run"
 
     try:
+        if command == "verify-backup":
+            verify_backup(args.backup_file)
+            print("Backupens ZIP, manifest och sökvägar är verifierade.")
+            return
+
         if command in {"run", "start"}:
             run_web(args.config, start_worker=not args.no_worker)
             return

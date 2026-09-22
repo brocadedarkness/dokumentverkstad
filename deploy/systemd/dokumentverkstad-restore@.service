@@ -1,0 +1,16 @@
+[Unit]
+Description=Restore Dokumentverkstad into separate installation %i
+
+[Service]
+Type=oneshot
+User=dokumentverkstad
+Group=dokumentverkstad
+WorkingDirectory=/opt/dokumentverkstad
+UMask=0027
+# Each instance must have its own reviewed config and a downloaded backup.zip.
+# No --force, no production EnvironmentFile and no automatic app startup.
+ExecStart=/opt/dokumentverkstad/.venv/bin/python -m dokumentverkstad --config /var/lib/dokumentverkstad-restore/%i/dokumentverkstad.toml restore /var/lib/dokumentverkstad-restore/%i/backup.zip
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/dokumentverkstad-restore/%i
+PrivateTmp=true

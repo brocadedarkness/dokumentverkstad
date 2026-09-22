@@ -16,6 +16,25 @@ from helpers import workspace_tempdir
 
 
 class CliTests(unittest.TestCase):
+    def test_verify_backup_needs_no_installation_config_and_does_not_restore(self) -> None:
+        from dokumentverkstad.backup import create_backup
+        from dokumentverkstad.config import AppConfig
+
+        with workspace_tempdir() as tmp:
+            root = Path(tmp)
+            config = AppConfig(root / "archive", root / "runtime", root / "ingest")
+            backup = create_backup(config, root / "backups")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                main(["--config", str(root / "missing.toml"), "verify-backup", str(backup.path)])
+            self.assertIn("verifierade", output.getvalue())
+            self.assertFalse(config.runtime_root.exists())
+            invalid = root / "invalid.zip"
+            invalid.write_bytes(b"not ZIP")
+            with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                main(["verify-backup", str(invalid)])
+            self.assertEqual(error.exception.code, 2)
+
     def test_clear_error_when_configured_directory_cannot_be_created(self) -> None:
         with workspace_tempdir() as tmp:
             root = Path(tmp)
