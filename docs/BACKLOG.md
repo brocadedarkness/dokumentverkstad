@@ -73,3 +73,11 @@ Upptäck Documents där vanlig PDF-textutvinning ger ingen eller otillräcklig t
 
 * OCR pipeline: lokal Tesseract-baserad OCR för bild-PDF och bildsidor, med proveniens och reproducerbar textutvinning.
 * Multimodal document analysis: lokal visuell modell för bildbaserade eller visuellt komplexa sidor; används som analyslager, inte som ersättning för arkiverad OCR-text.
+
+# Separera AI-orkestrering från webblagret
+
+Background workern är en separat process men återanvänder AI-orkestrering genom `CaptureApp` i `web.py`. Det innebär att gränsen mellan webblagret och den gemensamma applikationslogiken inte är helt ren: kod som behövs av workern ligger i en modul vars primära ansvar är webbapplikationen.
+
+Detta är inte nödvändigtvis ett funktionellt problem i nuläget och bör inte refaktoreras enbart av arkitektoniska skäl. Vid framtida arbete som berör `CaptureApp`, AI-orkestreringen eller workerarkitekturen bör det dock övervägas om den gemensamma logiken kan flyttas till en neutral applikations- eller servicemodul som både webben och workern använder.
+
+Målet skulle vara att behålla webben och workern som separata klienter av gemensam applikationslogik, snarare än att workern är beroende av webblagret.
