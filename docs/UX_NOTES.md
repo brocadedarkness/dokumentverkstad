@@ -823,3 +823,7 @@ Det måste finnas möjlighet att radera dokument, eller ta bort filer som hör t
 
 ## OCR
 Möjligheten att OCR:a dokument är klart önskvärd.
+
+## Utvecklingsmiljö
+
+En ny utvecklingsmiljö kan inte köra testsviten efter 'pip install -e .' eftersom pytest inte deklareras som test/dev-beroende. Det vore snyggt att lägga till ett exempelvis test-extra i pyproject.toml.
