@@ -815,3 +815,11 @@ Det behöver gå att lägga till eller ta bort projekt från de enskilda dokumen
 ## Prestanda
 
 Prestandaproblemen i /documents verkar ha lösts efter flytten till VPS-miljö. Sannolikt hängde de ihop med att tjänsten kördes lokalt på en ganska klen Windows-PC. Kan vara bra att ha med sig för ev. framtida lokala implementationer, men ingenting som just nu akut behöver lösas.
+
+# 2026-09-28
+
+## Ta bort dokument
+Det måste finnas möjlighet att radera dokument, eller ta bort filer som hör till dokument om det blivit fel. Sådan möjlighet saknas idag, vilket är frustrerande.
+
+## OCR
+Möjligheten att OCR:a dokument är klart önskvärd.
