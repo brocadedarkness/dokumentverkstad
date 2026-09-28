@@ -819,11 +819,17 @@ Prestandaproblemen i /documents verkar ha lösts efter flytten till VPS-miljö. 
 # 2026-09-28
 
 ## Ta bort dokument
+
 Det måste finnas möjlighet att radera dokument, eller ta bort filer som hör till dokument om det blivit fel. Sådan möjlighet saknas idag, vilket är frustrerande.
 
 ## OCR
+
 Möjligheten att OCR:a dokument är klart önskvärd.
 
 ## Utvecklingsmiljö
 
 En ny utvecklingsmiljö kan inte köra testsviten efter 'pip install -e .' eftersom pytest inte deklareras som test/dev-beroende. Det vore snyggt att lägga till ett exempelvis test-extra i pyproject.toml.
+
+## Minnesanvändning vid backupverifiering
+
+Provrestore under verifierad backup nådde ca 4,2 GB peak memory på en VPS med 8 GB RAM. Fungerar i nuläget, men bör följas upp och vid behov optimeras post-MVP.
