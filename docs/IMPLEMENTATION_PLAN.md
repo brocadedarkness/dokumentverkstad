@@ -1,5 +1,7 @@
 # IMPLEMENTATION_PLAN.md
 
+Status: MVP complete (v0.1.0). Denna implementationsplan dokumenterar arbetet fram till den första verifierade MVP-releasen och betraktas därefter som historisk. Fortsatt produktutveckling planeras i ROADMAP.md.
+
 ## Syfte
 
 Implementationsplanen beskriver hur Dokumentverkstad utvecklas från idé till ett fungerande system.
