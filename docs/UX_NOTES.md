@@ -832,4 +832,4 @@ En ny utvecklingsmiljö kan inte köra testsviten efter 'pip install -e .' efter
 
 ## Minnesanvändning vid backupverifiering
 
-Provrestore under verifierad backup nådde ca 4,2 GB peak memory på en VPS med 8 GB RAM. Fungerar i nuläget, men bör följas upp och vid behov optimeras post-MVP.
+Verifierade backupkörningar har nått cirka 4,2–5,6 GB peak memory på en VPS med 8 GB RAM. Backup fungerar i nuläget, men minnesanvändningen bör följas upp och vid behov optimeras post-MVP.
