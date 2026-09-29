@@ -1355,7 +1355,7 @@ Dokumentverkstad ska inte göras arkitektoniskt beroende av Tailscale.
 
 Webbservern ska fortsatt kunna köras lokalt och behöver inte i denna deliteration exponeras öppet mot internet.
 
-**Status: implementerad. Verifiering från andra egna enheter återstår som praktiskt driftstest.**
+**Status: implementerad. Fjärråtkomst och PDF-upload från verkliga klienter verifierades i 10.5 via HTTPS/Caddy.**
 
 ### 8.4b – Långvariga AI-operationer
 
@@ -1376,7 +1376,9 @@ Inför inte en distribuerad jobbkösarkitektur om en enklare lösning räcker.
 
 Den exakta interaktionen ska samordnas med Iteration 9 så att bakgrundsjobb passar in i Dokumentverkstads konsoliderade gränssnitt.
 
-**Status: återstår.**
+**Status:** bakgrundskörning med separat worker är levererad och verifierad
+i 10.5, även med stängd klient. Tydligare planned/running-status i Document-vyn
+kvarstår uttryckligen som post-MVP i BACKLOG, inte som öppet MVP-krav.
 
 ---
 
@@ -1827,7 +1829,7 @@ Iteration 9 är klar när följande scenario fungerar:
 
 # Iteration 10 – Ett kunskapsrum, flera klienter
 
-## Verifierat nuläge inför 10.4
+## Verifierat nuläge vid MVP-avslut 2026-09-29
 
 Enligt verifiering i verklig drift fungerar nu Linux-VPS-modellen: ett
 kanoniskt server-Archive har migrerats med backup/restore och Runtime/SQLite
@@ -1840,14 +1842,15 @@ resultat. API-nyckeln finns i serverns skyddade EnvironmentFile, utanför Git.
 
 Vid verklig restore som root blev Archive root-ägt: läsning fungerade men
 review/save gav PermissionError. Korrekt ownership under
-`/var/lib/dokumentverkstad` löste problemet. 10.4 ska förebygga upprepning
+`/var/lib/dokumentverkstad` löste problemet. Rutinen i 10.4 förebygger upprepning
 genom restore som serviceanvändaren, inte genom ändrat Archive-format.
 
 Detta är rapporterad driftverifiering, inte en ny fjärrkontroll från repoarbetet.
-Reboot, samlad tvåklientsacceptans och off-server-återställning återstår
-som uttryckliga godkännandepunkter nedan.
+Reboot, tvåklientsacceptans, schemalagd off-server-backup och separat restore
+med skrivning och persistence är nu godkända. Detaljer och resultat finns i
+[DEPLOYMENT.md, 10.5](DEPLOYMENT.md#105--mvp-acceptance-och-driftverifiering).
 
-## Återstående deliterationer
+## Avslutande deliterationer
 
 ### 10.4 – Off-server backup och restore
 
@@ -1878,8 +1881,11 @@ transport måste aktiveras och verifieras på servern enligt DEPLOYMENT.md.
 En lokal katalog på samma VPS är inte off-server-backup. Normal schemalagd
 backup kräver ingen SSH-session.
 
-**Status:** repoartefakter implementerade; extern lagring, serveraktivering
-och verklig restoreverifiering återstår. Lokala tester ersätter inte dessa.
+**Status: KLAR OCH VERIFIERAD.** Off-server-backup till Dropbox via rclone är
+aktiverad. Manuell backup/restore och första timerutlösta backupen
+2026-09-29 är verifierade. Flera verifierade generationer finns kvar.
+Retention är en månad med manuell gallring; automatisk gallring är post-MVP.
+Cirka 1,29 GB per daglig generation motsvarar cirka 39 GB per månad.
 
 **Klart när:** minst en schemalagd backup har lästs tillbaka från den valda
 externa lagringen, flera generationer finns kvar och en generation har
@@ -1890,31 +1896,38 @@ raderas innan en ny är verifierad.
 
 ### 10.5 – MVP acceptance och driftverifiering
 
-En kort acceptansrunda, inte en ny feature-iteration. Dokumentera datum,
-kodrevision, klienter och resultat för varje punkt; lämna ej genomförda
-punkter öppna:
+En kort acceptansrunda, inte en ny feature-iteration. Följande befintliga
+acceptanskriterier är godkända enligt rapporterad verifiering på VPS:
 
-- [ ] Caddy, web och worker återkommer automatiskt efter serverreboot.
-- [ ] HTTPS och Basic Auth fungerar efter reboot; obehörig åtkomst stoppas.
-- [ ] Tjänsten fungerar från minst två olika klienter.
-- [ ] Document/PDF-visning fungerar.
-- [ ] Capture/Notering fungerar.
-- [ ] PDF-upload fungerar från fjärrklient och blir Document genom automatisk
+- [x] Caddy, web och worker återkommer automatiskt efter serverreboot.
+- [x] HTTPS och Basic Auth fungerar efter reboot; obehörig åtkomst stoppas.
+- [x] Tjänsten fungerar från minst två olika klienter.
+- [x] Document/PDF-visning fungerar.
+- [x] Capture/Notering fungerar.
+- [x] PDF-upload fungerar från fjärrklient och blir Document genom automatisk
   ingest utan manuellt `process-ingest`.
-- [ ] AI startas från fjärrklient, klienten stängs och workern slutför jobbet.
-- [ ] AI-review och skrivning av Knowledge Objects fungerar.
-- [ ] Serverbackup skapas automatiskt enligt 10.4.
-- [ ] Minst en off-server-backup är återläst och verifierad; äldre
+- [x] AI startas från fjärrklient, klienten stängs och workern slutför jobbet.
+- [x] AI-review och skrivning av Knowledge Objects fungerar.
+- [x] Serverbackup skapas automatiskt enligt 10.4.
+- [x] Minst en off-server-backup är återläst och verifierad; äldre
   generationer finns kvar.
-- [ ] Restore från extern lagring görs till en separat installation.
-- [ ] Runtime/SQLite kan återskapas från återställt Archive.
-- [ ] Restore/deployment ger rätt ownership och serviceanvändaren kan spara
+- [x] Restore från extern lagring görs till en separat installation.
+- [x] Runtime/SQLite kan återskapas från återställt Archive.
+- [x] Restore/deployment ger rätt ownership och serviceanvändaren kan spara
   och redigera Knowledge Objects.
-- [ ] Hela befintliga testsviten passerar i målmiljön.
+- [x] Hela befintliga testsviten passerar i målmiljön.
 
-**Status: EJ GODKÄND.** När samtliga punkter är godkända ska planen uttryckligen
-markera **MVP COMPLETE** och ange datum och verifierad revision. Markeringen
-får inte sättas enbart för att repoimplementationen är färdig.
+**Status: AVSLUTAD OCH GODKÄND – 2026-09-29.**
+
+**MVP COMPLETE – 2026-09-29.** Accepterad serverrevision:
+`18b74611bf7b6541d1e3ce5cbf4c77e588ad121b`, Ubuntu/Linux VPS med Python 3.14.4.
+Hela unittest-sviten passerade i ren temporär checkout på VPS: **183/183,
+0 failures**, inklusive POSIX-ownership-testet.
+
+Vid avslutet var main `b16d9d729a0e8326b27168776443e75c0cba29a6`.
+`git diff --stat 18b7461..b16d9d7` visar endast `docs/BACKLOG.md` och
+`docs/UX_NOTES.md`: inga funktionella ändringar sedan accepterad revision.
+Även denna avslutande uppdatering ändrar endast dokumentation.
 
 AI-jobbens planned/running-synlighet i Document-vyn ligger i BACKLOG och
 implementeras inte i 10.4 eller som generell polish i 10.5.

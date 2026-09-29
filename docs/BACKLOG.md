@@ -15,16 +15,17 @@ Framför allt EPUB, men också frågan om andra format som DOCX etc.
 
 # Extern webbtillgång utan Tailscale-klient
 
-Flyttat till Iteration 10: ett enda privat Archive nås via vanlig HTTPS med
-Caddy och HTTP Basic Auth. 10.3.1 förbereder deploymenten; verklig extern
-aktivering görs i 10.3.2 enligt [DEPLOYMENT.md](DEPLOYMENT.md).
+Levererat i Iteration 10 och godkänt i 10.5: ett enda privat Archive nås via
+vanlig HTTPS med Caddy och HTTP Basic Auth. Verklig driftverifiering finns
+i [DEPLOYMENT.md](DEPLOYMENT.md).
 
 # Automatiserad backup
 
-Grundbehovet är flyttat till Iteration 10.4: systemd-timer, befintligt
-ZIP-format, extern transport och verifierad återläsning/restore. Alla externa
-generationer behålls tills administratören gallrar manuellt efter verifiering.
-Automatisk gallring och daily/weekly/monthly-policy är möjliga post-MVP-behov.
+Grundbehovet är levererat och verifierat i Iteration 10.4/10.5: systemd-timer,
+befintligt ZIP-format, rclone till Dropbox och verifierad återläsning/restore.
+Första automatiska timerkörningen godkändes 2026-09-29. MVP-driften behåller
+verifierade generationer i en månad med manuell gallring. Automatisk gallring
+är post-MVP enligt den separata posten nedan.
 
 # Tydligare AI-jobbstatus i Document-vyn
 
@@ -96,4 +97,15 @@ Målet skulle vara att behålla webben och workern som separata klienter av geme
 
 # Automatisk backupgallring
 
-Inför ett schemalagt jobb som gallrar verifierade backupgenerationer äldre än en månad, med skydd mot att radera den senaste verifierade generationen.
+Post-MVP: inför ett schemalagt jobb som gallrar verifierade backupgenerationer
+äldre än en månad, med skydd mot att radera den senaste verifierade generationen.
+En ny backup får inte medföra att fungerande äldre backups raderas innan den
+nya verifierats. MVP använder manuell gallring; automatisk gallring är inte
+implementerad och blockerar inte avslutad MVP-acceptans.
+
+# Minnesanvändning vid backupverifiering
+
+Verifierade backupkörningar har nått cirka 4,2–5,6 GB peak memory på en VPS
+med 8 GB RAM. Backup fungerar i nuläget, men minnesanvändningen bör följas
+upp och vid behov optimeras post-MVP. Detta är teknisk skuld, inte en
+MVP-blocker. Se även [UX_NOTES.md](UX_NOTES.md).

@@ -6,7 +6,7 @@ Detta dokument beskriver den aktuella produktionsmiljön för Dokumentverkstad.
 
 Till skillnad från arkitekturen är deployment-specifikationen avsedd att kunna förändras över tid när hårdvara, operativsystem eller externa tjänster byts ut.
 
-## Verifierat nuläge inför 10.4
+## Verifierat nuläge vid MVP-avslut 2026-09-29
 
 Enligt verklig driftverifiering körs nu det kanoniska Archive på Linux-VPS,
 migrerat med Dokumentverkstads backup/restore och återskapat Runtime/index.
@@ -22,8 +22,11 @@ restore som serviceanvändaren och verifierar även skrivning.
 
 10.3-avsnitten nedan är installations- och återinstallationsreferens; de
 innebär inte att den redan fungerande installationen ska göras om. Off-server
-backup är förberedd i repo men inte aktiverad eller fjärrverifierad genom
-detta arbete. Samlad reboot-/tvåklientsacceptans återstår i 10.5.
+backup till Dropbox via rclone är aktiverad och verifierad, även från timern.
+Reboot, två klienter och separat restore med skrivning och persistence är
+godkända i 10.5. MVP är avslutad; se acceptansprotokollet under 10.5 nedan.
+Uppgifterna bygger på rapporterade verkliga driftkontroller, inte på nya
+fjärrkontroller vid denna dokumentationsuppdatering.
 
 ---
 
@@ -510,10 +513,10 @@ credentials lagras separat enligt nästa avsnitt.
 
 # Backup
 
-Dropbox används som synkronisering, inte som backup.
-
-Servern ska aktivera regelbunden backup till annan lagring än den aktiva
-serverdisken enligt 10.4 nedan.
+Dropbox används nu som off-server-lagring för separata, verifierade
+backupgenerationer via rclone enligt 10.4. Det aktiva Archive ligger på
+VPS:en; backuptransporten synkroniserar inte Archive mellan installationer.
+Den dagliga systemd-timern är aktiverad och verifierad i verklig drift.
 
 Arkivet är den viktigaste tillgången och ska kunna återställas oberoende av serverns runtime-data.
 
@@ -595,9 +598,13 @@ web/worker. Saknat stöd ska ge fel, aldrig falla tillbaka till live-kopiering.
 **Stoppa timern och invänta/stoppa pågående backup-service före underhåll**;
 kontrollera att båda app-tjänsterna är upptinade innan arbetet fortsätter.
 
-Alla externa generationer behålls i MVP. Administratören måste följa utrymme
-och bestämma manuell retention, exempelvis minst sju senaste verifierade
-generationer. Gallra endast explicit valda äldre generationer efter att en
+**Retentionbeslut för MVP:** verifierade off-server-backuper sparas i en
+månad. Gallring sker tills vidare manuellt; backupflödet raderar inte externa
+generationer automatiskt. Cirka 1,29 GB per daglig generation motsvarar
+cirka 39 GB per månad. Administratören följer lagringsutrymmet och gallrar
+explicit valda äldre generationer, men behåller alltid den senaste
+verifierade generationen. Automatisk gallring är post-MVP enligt BACKLOG och
+ska också skydda den senaste verifierade generationen. Gallra först efter att en
 ny generation och dess restore har verifierats; ingen automatisk
 lagringslivscykel hos leverantören får radera dem i förtid. Vid transportfel
 ligger lokal ZIP kvar för diagnos och eventuell manuell återföring. Nästa
@@ -855,9 +862,87 @@ klienter, dokument/PDF, notering, fjärrupload med automatisk ingest, AI med
 stängd klient, review/save, schemalagd backup, verifierad off-server-generation,
 separat restore, rebuild, ownership och hela testsviten.
 
-Registrera faktisk körning och resultat, inte bara att kommandon finns.
-10.5 inför inga nya features. Först efter godkänd checklista kan planen få
-slutstatus **MVP COMPLETE**.
+## Godkänd acceptans – 2026-09-29
+
+**10.4 och 10.5 är avslutade; MVP COMPLETE.** Följande är rapporterade
+resultat från verklig drift, inte en ny acceptanskörning vid dokumentationen.
+
+### Revision och testmiljö
+
+- Accepterad serverrevision: `18b74611bf7b6541d1e3ce5cbf4c77e588ad121b`.
+- Server: Ubuntu/Linux VPS, Python 3.14.4.
+- Main vid avslutet: `b16d9d729a0e8326b27168776443e75c0cba29a6`.
+  `git diff --stat 18b7461..b16d9d7` visar endast `docs/BACKLOG.md` och
+  `docs/UX_NOTES.md`, alltså inga funktionella ändringar efter serverrevisionen.
+- Hela sviten kördes med `python -m unittest discover -s tests` från en ren
+  temporär checkout på VPS: **183 körda, 183 godkända, 0 failures**.
+  POSIX-ownership-testet kördes också, till skillnad från Windows-körningen.
+  En första körning direkt i `/opt/dokumentverkstad` fick ett config-testfel
+  eftersom config-loadern avsiktligt upptäckte den untracked produktionsfilen
+  `dokumentverkstad.toml`. Ren checkout utan produktionsconfig gav 183/183.
+  Detta var testmiljöpåverkan, inte ett applikationsfel; behåll produktionsconfig
+  och kör tester isolerat från den.
+
+### Två klienter, AI och beständig data
+
+Två verkliga klienter nådde samma installation över HTTPS. PDF-upload blev
+tillgänglig som Document från den andra klienten och original-PDF kunde
+öppnas. Fristående och dokumentkopplade noteringar kunde skapas; redigeringar
+sparades beständigt och var synliga från båda klienterna.
+
+AI-analys startades från en klient som därefter stängdes. Den separata
+workern slutförde jobbet mot OpenAI. Resultatet öppnades från den andra
+klienten; förslag kunde redigeras/accepteras och både reviewbeslut och
+accepterat Knowledge Object sparades beständigt.
+
+### Reboot, HTTPS och nätverksisolering
+
+Full VPS-reboot genomfördes utan manuell start av applikationstjänsterna.
+Efteråt var Caddy, `dokumentverkstad-web`, `dokumentverkstad-worker` och
+`dokumentverkstad-backup.timer` active/enabled. Web och worker hade
+`FreezerState=running`. Webben fungerade, data från före reboot fanns kvar
+och nya ändringar kunde sparas.
+
+`https://verkstad.asdr.se` fungerade efter reboot. Anrop utan credentials
+gav HTTP/2 401 från Caddy; korrekt autentisering fungerade. Caddy lyssnade
+publikt på port 443 medan Dokumentverkstad endast lyssnade på
+`127.0.0.1:8000` och inte exponerades direkt publikt.
+
+### Verklig backup och separat restore
+
+En manuell backup på cirka 1,29 GB laddades upp till Dropbox via rclone,
+lästes tillbaka, SHA-256-kontrollerades och godkändes av `verify-backup`.
+Separat restore och SQLite-rebuild gav 305 Documents, 1513 Knowledge Objects,
+13 Projects och 67 AI runs, med `Health: ok`. Inga filer i återställt Archive
+eller Runtime hade annan ägare än `dokumentverkstad`.
+
+Under 10.5 kördes restore-webben som `dokumentverkstad` på `127.0.0.1:8001`
+utan worker. En testnotering skapades och redigerades. Efter stopp och ny
+start av testwebben fanns både noteringen och redigeringen kvar.
+Produktionsinstallationen påverkades inte. Den tillfälliga
+restore-acceptansinstallationen har därefter tagits bort.
+
+### Första automatiskt schemalagda backupen
+
+Timern startade backupen utan manuell intervention 2026-09-29:
+
+- `Result=success`, `ExecMainStatus=0`.
+- Generation: `1a18cd1e3731496bb00e0a28922a6d9b`.
+- Snapshot, upload, readback och restore check slutfördes; verification
+  marker laddades upp och backupen rapporterades verifierad.
+- `last-success.json` uppdaterades till den nya generationen.
+- Både den nya generationen och föregående verifierade generation
+  `4c6222d3c77f41a98b1aba597fd6a453` fanns kvar i Dropbox.
+- Caddy, web, worker och backup-timer var active efter körningen;
+  web och worker hade `FreezerState=running`.
+
+Retention är beslutad till en månad med manuell gallring enligt 10.4 ovan.
+Automatisk gallring kvarstår som post-MVP.
+
+Verifierade backupkörningar har nått cirka 4,2–5,6 GB peak memory på en VPS
+med 8 GB RAM. Backup fungerar i nuläget, men minnesanvändningen bör följas
+upp och vid behov optimeras post-MVP. Detta är teknisk skuld, inte en
+MVP-blocker; se [UX_NOTES.md](UX_NOTES.md) och [BACKLOG.md](BACKLOG.md).
 
 ---
 
@@ -933,8 +1018,9 @@ med en tillfällig testhash via `caddy validate`; saknad auth-fil och
 platshållarhash avvisades. Den adapterade konfigurationen kontrollerades för
 auth före proxy utan route-undantag, loopback-target och borttagen Authorization.
 Testhashen raderades. Ingen Caddy-server startades och inget publikt certifikat
-begärdes. Verklig TLS, Linux-filrättigheter och browser-upload genom en körande
-proxy återstår att verifiera i 10.3.2.
+begärdes. Vid denna förberedande körning återstod verklig TLS,
+Linux-filrättigheter och browser-upload genom körande proxy. Verklig
+driftverifiering är nu genomförd enligt acceptansprotokollet för 10.5 ovan.
 
 # 10.3.2 – verklig extern aktivering (manuell körplan)
 

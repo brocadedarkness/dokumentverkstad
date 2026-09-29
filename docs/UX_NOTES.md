@@ -802,7 +802,7 @@ Finns det en poäng med möjligheten att göra en AI-analys av flera dokument sa
 
 ## Jobbstatus pågående AI-körningar
 
-Synlig AI-jobbstatus i gränssnittet. När en AI-analys har startats men ännu inte är färdig ska dokumentvyn visa ett diskret tillstånd, exempelvis ”AI-analys pågår”. Det ska bygga på befintlig jobbstatus (planned/running) och inte kräva att klienten hålls öppen. Automatisk uppdatering/pollning kan övervägas senare; för MVP räcker det att statusen syns när sidan renderas.
+Synlig AI-jobbstatus i gränssnittet. När en AI-analys har startats men ännu inte är färdig ska dokumentvyn visa ett diskret tillstånd, exempelvis ”AI-analys pågår”. Det ska bygga på befintlig jobbstatus (planned/running) och inte kräva att klienten hålls öppen. Automatisk uppdatering/pollning kan övervägas senare. Förtydligande vid MVP-avslut 2026-09-29: hela denna UX-förbättring är post-MVP enligt BACKLOG, inte ett MVP-acceptanskrav.
 
 ## Filtrering i dokumentvyn
 
@@ -828,8 +828,13 @@ Möjligheten att OCR:a dokument är klart önskvärd.
 
 ## Utvecklingsmiljö
 
-En ny utvecklingsmiljö kan inte köra testsviten efter 'pip install -e .' eftersom pytest inte deklareras som test/dev-beroende. Det vore snyggt att lägga till ett exempelvis test-extra i pyproject.toml.
+Rättelse 2026-09-29: projektets testsvit använder standardbibliotekets
+`unittest`, inte pytest. Efter installation av projektets beroenden körs den
+med `python -m unittest discover -s tests`; något pytest-extra krävs inte.
+På VPS/Linux med Python 3.14.4 passerade 183/183 tester från en ren temporär
+checkout utan produktionsconfig. Se acceptansprotokollet i
+[DEPLOYMENT.md](DEPLOYMENT.md) för testmiljön och config-påverkan.
 
 ## Minnesanvändning vid backupverifiering
 
-Verifierade backupkörningar har nått cirka 4,2–5,6 GB peak memory på en VPS med 8 GB RAM. Backup fungerar i nuläget, men minnesanvändningen bör följas upp och vid behov optimeras post-MVP.
+Verifierade backupkörningar har nått cirka 4,2–5,6 GB peak memory på en VPS med 8 GB RAM. Backup fungerar i nuläget, men minnesanvändningen bör följas upp och vid behov optimeras post-MVP. Detta är teknisk skuld, inte en MVP-blocker.
