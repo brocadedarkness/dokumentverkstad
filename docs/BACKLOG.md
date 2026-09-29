@@ -93,3 +93,7 @@ Background workern är en separat process men återanvänder AI-orkestrering gen
 Detta är inte nödvändigtvis ett funktionellt problem i nuläget och bör inte refaktoreras enbart av arkitektoniska skäl. Vid framtida arbete som berör `CaptureApp`, AI-orkestreringen eller workerarkitekturen bör det dock övervägas om den gemensamma logiken kan flyttas till en neutral applikations- eller servicemodul som både webben och workern använder.
 
 Målet skulle vara att behålla webben och workern som separata klienter av gemensam applikationslogik, snarare än att workern är beroende av webblagret.
+
+# Automatisk backupgallring
+
+Inför ett schemalagt jobb som gallrar verifierade backupgenerationer äldre än en månad, med skydd mot att radera den senaste verifierade generationen.
