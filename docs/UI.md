@@ -2,7 +2,11 @@
 
 ## Syfte
 
-Detta dokument beskriver hur användaren arbetar i Dokumentverkstads webbgränssnitt.
+Detta dokument beskriver UI-principer och designriktning, delvis från tiden
+före MVP. Exempel är inte en lista över levererade funktioner eller nya
+releasekrav. USER_GUIDE.md beskriver v0.1.0; ROADMAP.md avgränsar planerade
+releaser. Global kunskapssökning, export, Open Threads, projektsynteser och
+ett globalt aktivt projektcontext är inte implementerade.
 
 Gränssnittet ska organiseras efter användarens arbete, inte efter systemets interna objektmodell.
 
@@ -94,7 +98,7 @@ Project
 → syntetisera och orientera sig i ett kunskapsområde
 ```
 
-Sökning är global och tillgänglig från alla arbetsytor, men är inte i första versionen en egen huvudyta.
+I v0.1.0 finns metadatafiltrering på Documents-sidan. Global sökning över kunskapsinnehåll finns inte.
 
 ---
 
@@ -136,7 +140,7 @@ Efter att en notering sparats:
 * fokus återgår till textfältet,
 * användaren kan omedelbart skriva nästa notering.
 
-Ingen omladdning eller ny dialog krävs.
+I v0.1.0 sparas formuläret genom POST och redirect med sidladdning. Ingen ny dialog krävs.
 
 ---
 
@@ -470,7 +474,7 @@ Filter ska kunna kombineras utan att användaren behöver formulera avancerade s
 
 # Sökning
 
-Global sökning ska finnas men behöver inte vara avancerad i första versionen.
+Följande är en tidigare designriktning för global sökning, inte levererad v0.1.0-funktion eller ett tillägg till roadmapens releasekrav.
 
 Den ska kunna söka i:
 

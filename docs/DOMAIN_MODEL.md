@@ -8,6 +8,10 @@ Domänmodellen är oberoende av implementation. Den beskriver inte databastabell
 
 När implementationen förändras ska domänmodellen i huvudsak kunna förbli densamma.
 
+Modellen beskriver även möjligheter som ännu saknar användarflöde i v0.1.0,
+exempelvis originalfil till ett befintligt manuellt Document, flera källor
+per KO och generell objektborttagning. För faktiskt stöd, se USER_GUIDE.md.
+
 ---
 
 # Grundläggande ontologi

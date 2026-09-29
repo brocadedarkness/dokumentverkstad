@@ -1,5 +1,11 @@
 # MVP-specifikation för Dokumentverkstad
 
+Detta är den ursprungliga MVP-specifikationen, bevarad som designhistorik.
+Levererad v0.1.0 och genomförd acceptans beskrivs i IMPLEMENTATION_PLAN.md
+och DEPLOYMENT.md; aktuell användning i USER_GUIDE.md. Alla möjligheter
+nedan blev inte funktioner: exempelvis finns ingen automatisk 30-dagars
+radering eller generell Trash för KO och Projects.
+
 ## Syfte
 
 Detta dokument definierar den första körbara versionen av Dokumentverkstad.

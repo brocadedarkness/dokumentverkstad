@@ -12,13 +12,18 @@ Målet är att förändringar ska vara begripliga, spårbara och följa projekte
 
 Dokumentationen är projektets auktoritativa källa.
 
-Vid konflikt mellan kod och dokumentation ska dokumentationen betraktas som korrekt, om inte dokumentationen uttryckligen bedöms vara föråldrad och först uppdateras.
+Produktbeslut styr avsedd utveckling. Påståenden om levererad funktion ska däremot kontrolleras mot kod, tester och dokumenterad driftverifiering. Ändra inte automatiskt kod för att uppfylla en äldre text; korrigera inaktuella beskrivningar och skilj framtida mål från dagens stöd.
 
 Kod ska implementera dokumentationen.
 
 ---
 
 # Dokumentens ansvar
+
+`IMPLEMENTATION_PLAN.md` är historik fram till godkänd MVP. `ROADMAP.md`
+beskriver planerad utveckling, `USER_GUIDE.md` levererade användarflöden,
+`BACKLOG.md` idéer och `UX_NOTES.md` daterade observationer. `AGENTS.md` i
+repositoryroten innehåller arbetsregler och utvecklingskommandon.
 
 Projektets dokument har följande ansvar:
 
@@ -39,7 +44,7 @@ Varje förändring bör i första hand beskrivas i rätt dokument innan implemen
 
 # Prioritetsordning
 
-Vid motstridiga uppgifter gäller följande prioritet:
+För avsedd design används följande prioritet. Den är inte bevis för att en funktion är implementerad:
 
 1. Manifest
 2. Design Principles
@@ -112,6 +117,19 @@ Om en implementation visar att dokumentationen är olämplig bör dokumentatione
 ---
 
 # Tester
+
+Efter installation enligt README körs standardbibliotekets unittest-svit
+från repositoryroten:
+
+```sh
+python -m unittest discover -s tests
+```
+
+Pytest krävs inte. Kör från en ren checkout utan produktionsconfig eftersom
+config-loadern upptäcker `dokumentverkstad.toml` i aktuell katalog.
+MVP-acceptansen rapporterar 183/183 godkända på Linux; detta är historiskt
+resultat. Rena Markdown-ändringar kontrolleras med bland annat
+`git diff --check` och kräver inte en ny full testsvit.
 
 Varje förändring ska, när det är rimligt, kompletteras med eller uppdatera relevanta tester.
 

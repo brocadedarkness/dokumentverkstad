@@ -466,7 +466,10 @@ Aktuell implementation skriver lokal diagnostik till `runtime_root/logs/dokument
 Serverns Ingest Source är en lokal kö på persistent lagring. En synktjänst
 kan leverera filer dit men krävs inte för webbuppladdning.
 
-Dokument som läggs där registreras automatiskt av Dokumentverkstad.
+PDF-filer som läggs där behandlas automatiskt av workern. Ingest kontrollerar
+inte om extern kopiering är färdig; leverera färdiga filer till kön.
+Bearbetningsfel flyttar filen till ingest_source/failed med en .error.txt-fil.
+Ingen automatisk återkörning av dessa filer görs.
 
 Systemet är dock inte beroende av Dropbox och ska kunna använda andra Ingest Sources i framtiden.
 

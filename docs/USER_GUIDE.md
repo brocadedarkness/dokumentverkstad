@@ -1,8 +1,8 @@
 # Användarguide
 
-Den här guiden beskriver den funktionalitet som finns implementerad efter Iteration 8.4a.
+Den här guiden beskriver implementerad funktionalitet i v0.1.0, den godkända MVP:n. Installation finns i [README.md](../README.md), serverdrift och rapporterad acceptans i [DEPLOYMENT.md](DEPLOYMENT.md). Kommandona nedan förutsätter installerade projektberoenden. ROADMAP.md beskriver framtida arbete.
 
-Dokumentverkstad är i detta läge en lokal webbapplikation för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source eller webb-upload, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
+Dokumentverkstad är en personlig webbapplikation som kan köras lokalt eller på server för att registrera Documents, korrigera Document-metadata, se väntande arbete i Inbox, fånga och redigera noteringar som Knowledge Objects, arbeta med Projects, registrera PDF-filer från en konfigurerad Ingest Source eller webb-upload, köra valfri AI-analys efter uttryckligt godkännande, korrigera AI-reviewbeslut och se enkel AI-/review-statistik.
 
 ## Första initiering
 
@@ -43,68 +43,29 @@ http://127.0.0.1:8000/
 
 Standardservern lyssnar bara på `127.0.0.1`. Det är avsiktligt: lokal användning ska vara standard och Dokumentverkstad öppnar inte sig själv mot hela nätverket.
 
-Startsidan är Inbox.
+Startsidan är Inbox. `start` kör normalt även en inbäddad worker. På server används `run --no-worker` och en separat `worker` med samma config och datakataloger. Kör bara en worker mot samma Archive/Runtime.
 
 Om `.dokumentverkstad/secrets.enc` finns begär startflödet adminlösenord innan webbservern startar. Vid fel lösenord eller skadad secrets-fil startar inte tjänsten.
 
 En installation utan krypterade secrets startar utan adminlösenord och kan användas utan AI.
 
-## Privat fjärråtkomst med Tailscale Serve
+## Fjärråtkomst i v0.1.0
 
-Dokumentverkstad kan nås från egna enheter via Tailscale Serve utan att webbservern ändras från `127.0.0.1`.
+Den verifierade serverinstallationen nås över HTTPS via Caddy med Basic Auth.
+Öppna installationens HTTPS-adress och autentisera dig med dina tilldelade
+uppgifter. Flera klienter arbetar mot samma Archive; ingen klient håller
+en synkroniserad arkivkopia. Servern kör web och worker som separata
+systemd-tjänster och applikationen lyssnar endast på loopback.
 
-Modellen är:
+Tailscale var ett tidigare alternativ i utvecklingsarbetet och krävs inte
+för den verifierade MVP-installationen. Följ [DEPLOYMENT.md](DEPLOYMENT.md)
+för aktuell installation och återinstallation.
 
-```text
-Mobil/iPad/annan egen dator
-    ↓
-Tailscale tailnet
-    ↓
-Tailscale Serve
-    ↓
-127.0.0.1:8000
-    ↓
-Dokumentverkstad
-```
+Basic Auth hanteras av Caddy, inte av applikationen. Adminlösenordet för
+krypterade secrets är endast lokal upplåsning vid processstart och är inte
+webbinloggningen.
 
-Tailscale ska vara installerat och autentiserat på serverdatorn. Klientenheten måste också vara inloggad i samma tailnet eller tillåten av tailnetets policy.
-
-Starta först Dokumentverkstad lokalt:
-
-```powershell
-$env:PYTHONPATH = "src"
-python -m dokumentverkstad start
-```
-
-Starta därefter Serve mot den lokala porten:
-
-```powershell
-tailscale serve 8000
-```
-
-Om du vill vara explicit om localhost-målet kan du i stället använda:
-
-```powershell
-tailscale serve localhost:8000
-```
-
-Kontrollera aktiv Serve-konfiguration:
-
-```powershell
-tailscale serve status
-```
-
-Statusutskriften visar vilken tailnet-adress eller MagicDNS-URL som ska öppnas på mobil, iPad eller annan dator. Öppna den adressen från en enhet som har åtkomst i tailnetet.
-
-Stäng av/resetta Serve-konfigurationen:
-
-```powershell
-tailscale serve reset
-```
-
-Använd inte Tailscale Funnel för Dokumentverkstad i denna iteration. Tjänsten ska inte exponeras publikt mot internet.
-
-Säkerhetsmodellen i 8.4a är nätverksbaserad: Tailscale/tailnetet avgör vem som kan nå webbgränssnittet. Det finns inget separat webb-login eller sessionsautentisering. Alla enheter och användare som har nätverksåtkomst till tjänsten kan använda webbgränssnittet. Adminlösenordet för krypterade secrets är bara en lokal upplåsning vid processstart och är inte ett webb-login. Om tjänsten senare delas med andra användare eller exponeras på annat sätt måste webbautentisering och behörigheter omprövas.
+## Status
 
 Kontrollera installationen:
 
@@ -151,7 +112,7 @@ encrypted_secrets_path = ".dokumentverkstad/secrets.enc"
 secrets_path = ".dokumentverkstad/secrets.toml"
 ```
 
-Relativa sökvägar tolkas relativt config-filens katalog.
+Relativa sökvägar i TOML tolkas relativt config-filens katalog. Fälten `ai_output_language`, `ai_currency` och `ai_cost_limit` lagras i config men används inte som motsvarande styrning i analysflödet i v0.1.0.
 
 Om katalogerna inte finns skapas de normalt automatiskt första gången Dokumentverkstad används.
 
@@ -185,7 +146,7 @@ Om katalogen saknas skapas den automatiskt vid start.
 Efter Iteration 8.2 används runtime för:
 
 * staging-kopia vid PDF-ingest,
-* säker staging för webb-uppladdade PDF-filer,
+* staging för PDF-filer som workern hämtar från ingestkön,
 * färdigbehandlade ingest-filer i `runtime_root/ingest/processed`,
 * SQLite-index över Documents,
 * lokal diagnostiklogg i `runtime_root/logs/dokumentverkstad.log`.
@@ -198,7 +159,7 @@ Runtime ska inte betraktas som beständig användardata. Hela `runtime_root` kan
 
 Om katalogen saknas skapas den automatiskt vid start eller när `process-ingest` körs.
 
-Dropbox, iCloud eller liknande kan användas genom att deras klient synkar filer till denna lokala katalog. Dokumentverkstad använder ingen Dropbox- eller moln-API-integration.
+Dropbox, iCloud eller liknande kan användas genom att deras klient synkar filer till denna lokala katalog. Ingest använder ingen egen Dropbox- eller moln-API-integration. Off-server-backup använder däremot rclone enligt DEPLOYMENT.md.
 
 ## Manuell Document-registrering
 
@@ -238,7 +199,7 @@ Placera en PDF i den konfigurerade `ingest_source`.
 
 Om Ingest Source-katalogen inte finns ännu kan du först starta Dokumentverkstad eller köra `process-ingest` en gång, så skapas katalogen.
 
-Kör sedan:
+Med aktiv worker sker bearbetningen automatiskt. För en enstaka manuell ingest-pass utan parallellt arbetande worker kan du köra:
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -262,11 +223,18 @@ Systemet gör då en enkel ingest-pass:
 
 Inga Knowledge Objects skapas automatiskt och ingen AI-analys körs.
 
-Endast PDF med maskinläsbar text stöds. OCR finns inte.
+PDF är det enda importerade filformatet. Bildbaserade PDF:er kan bevaras, men utan extraherad text kan de inte AI-analyseras. OCR finns inte.
 
 Metadata prioriteras enkelt: användbar PDF-metadata används först, filnamnsmönstret används som fallback för titel och år, och manuell redigering räknas därefter som användarens korrigering. Originalfilens namn sparas alltid.
 
-Om en PDF inte kan bearbetas ligger den kvar i Ingest Source så att felet kan undersökas och filen kan försökas igen senare.
+Vid bearbetningsfel flyttas filen till `ingest_source/failed` med en
+`.error.txt`-fil. Status-/administrationsvyn visar antal misslyckade importer;
+detaljer finns i felfilen och driftloggen. Automatisk återkörning saknas.
+Efter att orsaken åtgärdats kan administratören lägga tillbaka filen i kön.
+
+Ingest kontrollerar inte att en externt kopierad fil är färdigskriven.
+Publicera en färdig PDF i kön, exempelvis genom överföring till ett tillfälligt
+namn utan `.pdf` följt av namnbyte på samma filsystem.
 
 ## Webb-upload av PDF
 
@@ -280,7 +248,7 @@ eller välj länken "Lägg till PDF" från Inbox.
 
 Uploadflödet accepterar PDF-filer från desktop och mobil webbläsare. När en PDF laddas upp behandlas den som en vanlig ingest-PDF:
 
-* filen tas emot i säker staging under Runtime,
+* filen köas i konfigurerad Ingest Source,
 * klientens filnamn saneras och får inte styra lokal sökväg,
 * innehållet kontrolleras så att det ser ut som PDF, inte bara att filändelsen är `.pdf`,
 * SHA-256-checksumma beräknas,
@@ -301,9 +269,14 @@ upload_max_bytes = 262144000
 
 Det motsvarar 250 MB och är valt för att rymma stora skannade eller bildrika PDF-filer utan att göra webbservern obegränsad. Värdet kan ändras i `dokumentverkstad.toml`.
 
-Om samma PDF redan finns i Archive skapas inget nytt Document. Webbgränssnittet visar då att PDF-filen redan finns i Archive.
+Webben bekräftar att filen lagts i importkön, inte att importen är klar.
+Workern gör därefter checksumme-, dublett- och extraktionsstegen ovan.
+Om samma PDF redan finns skapas inget nytt Document; uploadsvaret ger ingen
+separat dublettkvittens. Ladda om Inbox/Dokument efter bearbetning.
+Ogiltigt filnamn eller PDF-innehåll ger fel i uploadvyn; för stor request
+avvisas med HTTP 413. Senare bearbetningsfel hamnar i `ingest_source/failed`.
 
-Andra filformat än PDF avvisas i 8.4a. EPUB, DOCX, OCR och liknande import ligger utanför denna iteration.
+Andra filformat än PDF avvisas i v0.1.0. EPUB, DOCX och OCR är framtida arbete.
 
 ## Inbox
 
@@ -321,7 +294,7 @@ eller:
 
 Inbox visar Documents och AI-kandidater som väntar på beslut.
 
-Efter Iteration 6 kan Inbox visa:
+Inbox kan visa:
 
 * nya Documents,
 * Documents markerade som senare,
@@ -462,7 +435,7 @@ API-nyckeln söks i denna ordning:
 3. legacy `secrets.toml` enligt `secrets_path`,
 4. ingen credential.
 
-Miljövariabeln finns kvar för utveckling och kompatibilitet. Normal lokal drift bör använda krypterade secrets.
+Lokal drift kan använda krypterade secrets. I verifierad serverdrift får workern `OPENAI_API_KEY` via skyddad EnvironmentFile. Upplåsning i webprocessen låser inte upp en separat worker; se DEPLOYMENT.md.
 
 Skapa eller ersätt OpenAI API key senare:
 
@@ -496,7 +469,7 @@ Kryptering:
 
 Legacy `.dokumentverkstad/secrets.toml` kan fortfarande läsas om ingen miljövariabel eller upplåst encrypted secret finns. Den skrivs inte om eller raderas automatiskt. Migrera genom att köra `python -m dokumentverkstad secrets set-openai`, verifiera att AI fungerar, och ta sedan bort eller arkivera legacy-filen manuellt.
 
-Om ingen API-nyckel finns kan webbappen fortfarande startas. När du försöker använda AI visas ett begripligt meddelande om att nyckel saknas.
+Om ingen API-nyckel finns kan webbappen fortfarande startas. Förberedelsesidan kan visa att webprocessen saknar credential. Ett köat AI-jobb utan credential i workern misslyckas; felstatus kan ses när Document-vyn laddas om.
 
 ## Glömt adminlösenord
 
@@ -514,7 +487,9 @@ Archive påverkas inte av att secrets-filen byts ut.
 
 ## Backup
 
-Skapa en backup från projektets rot:
+Skapa en backup från projektets rot när inga processer ändrar Archive. Schemalagd off-server-backup följer rutinen i DEPLOYMENT.md och är driftverifierad. Gallring är fortfarande manuell i v0.1.0.
+
+För lokal backup:
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -553,7 +528,9 @@ Backup-kommandot skriver först till en temporär fil och byter namn när ZIP-fi
 
 ## Restore
 
-Återställ en backup till en ny eller tom installation:
+Återställ till en ny eller tom installation med stoppade skrivare. På Linux ska restore köras som serviceanvändaren, inte root, så att web och worker kan skriva efteråt. Följ DEPLOYMENT.md för off-server-restore, ownership-kontroll och skrivtest.
+
+Lokalt kommando:
 
 ```powershell
 $env:PYTHONPATH = "src"
@@ -580,7 +557,7 @@ python -m dokumentverkstad secrets set-openai
 
 ## Köra AI-analys
 
-AI-analys startas från ett Document som har extraherad text, exempelvis ett PDF-dokument som registrerats med `process-ingest`.
+AI-analys startas från ett Document som har extraherad text, exempelvis en PDF som workern har importerat.
 
 Öppna Document-vyn och välj:
 
@@ -600,7 +577,7 @@ Bekräftelsesidan visar:
 
 Uppskattningen görs lokalt med en konservativ teckenbaserad tokenuppskattning. Dokumenttext skickas inte till OpenAI för kostnadsestimatet.
 
-AI-anropet körs först när du väljer:
+Ett AI-jobb köas först när du väljer:
 
 ```text
 Starta AI-analys
@@ -621,11 +598,11 @@ På Document-sidan visas väntande AI-kandidater grupperade i ordningen Summary,
 
 Summary, Claims, Insights och Questions kan accepteras, redigeras och accepteras, skjutas upp eller avvisas. Vid avvisning kan du ange en frivillig avvisningsorsak.
 
-Project Suggestions är annorlunda. De är förslag om att koppla dokumentet till ett befintligt Project, inte kunskap som ska bli ett Knowledge Object. För dem kan du välja att koppla dokumentet till projektet eller avvisa förslaget. Förslaget visas bara om det kan kopplas entydigt till ett befintligt Project. Om projektet är okänt, eller om dokumentet redan är kopplat till det föreslagna projektet, visas inte förslaget.
+Project Suggestions är annorlunda. De lagras som kandidater i KO-formatet men hanteras som förslag om att koppla dokumentet till ett befintligt Project, inte som accepterad kunskap. För dem kan du välja att koppla dokumentet till projektet eller avvisa förslaget. Förslaget visas bara om det kan kopplas entydigt till ett befintligt Project. Om projektet är okänt, eller om dokumentet redan är kopplat till det föreslagna projektet, visas inte förslaget.
 
 När Summary, Claim, Insight eller Question accepteras blir den ett accepterat Knowledge Object. AI:s originalförslag bevaras även om du redigerar formuleringen. Efter varje beslut återgår sidan till samma Document så att resten av AI-resultatet kan reviewas utan att lämna dokumentet.
 
-Tidigare AI-reviewbeslut visas på Document-sidan och kan korrigeras. En accepterad kandidat kan markeras som avvisad och en avvisad kandidat kan markeras som accepterad igen. AI:s originalförslag ändras inte, och tidigare beslut sparas i Knowledge Object-historiken. Om ett accepterat objekt korrigeras till avvisat visas det inte längre som etablerad kunskap. Project Suggestions hanteras konsekvent genom att den föreslagna Document-Project-kopplingen tas bort om ett tidigare länkat förslag korrigeras till avvisat.
+Tidigare AI-reviewbeslut nås via länken "Tidigare AI-granskning" på Document-sidan och kan korrigeras. En accepterad kandidat kan markeras som avvisad och en avvisad kandidat kan markeras som accepterad igen. AI:s originalförslag ändras inte, och tidigare beslut sparas i Knowledge Object-historiken. Om ett accepterat objekt korrigeras till avvisat visas det inte längre som etablerad kunskap. Om ett tidigare länkat projektförslag korrigeras till avvisat tar implementationen bort Document-Project-kopplingen. Kopplingen lagrar inte varför den skapades; kontrollera därför projektkopplingen om den också varit manuellt motiverad.
 
 Efter körningen sparas en AI-körning i Archive med:
 
@@ -642,9 +619,19 @@ Efter körningen sparas en AI-körning i Archive med:
 
 Om AI-anropet misslyckas sparas ingen accepterad kunskap automatiskt. Dokumentet och tidigare Knowledge Objects påverkas inte.
 
-AI-anrop körs fortfarande synkront i webbrequesten i Iteration 7.1. Terminalen visar därför enkel diagnostik för AI-körningens start, provider-tid, slutförande eller fel, utan att logga dokumenttext eller API-nycklar.
+AI körs av workern efter köning. Klienten kan stängas och resultatet öppnas
+senare från en annan klient. Ladda om Document-vyn för aktuell körstatus.
+Ingen liveuppdatering eller backendspärr mot dubbla startanrop finns i v0.1.0.
+
+Ett jobb som avbrutits i `running` markeras som misslyckat vid workerstart;
+starta vid behov analysen igen. Driftloggen visar körning och fel utan
+att logga dokumenttext eller API-nycklar.
 
 ## Administration
+
+Vyn visar också Driftstatus med bland annat ingest- och AI-köernas antal.
+Det är grundläggande hälsokontroller, inte en fullständig integritetskontroll
+av alla originalfiler och referenser.
 
 Öppna:
 
@@ -713,7 +700,7 @@ Exempel:
       ko_<id>/
         object.json
     projects/
-      project_<id>/
+      proj_<id>/
         metadata.json
     relations/
       rel_<id>/
@@ -737,7 +724,7 @@ Manuella Documents har normalt bara `metadata.json`.
 
 ## Begränsningar
 
-Följande finns inte efter Iteration 8.4a:
+Följande finns inte i v0.1.0:
 
 * automatiska permanenta raderingar,
 * lokal AI,
@@ -754,21 +741,19 @@ Följande finns inte efter Iteration 8.4a:
 * avancerad sökning,
 * PDF-highlights,
 * egen PDF-läsare,
-* separat webb-login eller sessionsautentisering,
+* applikationsintern användardatabas eller sessionsautentisering (Basic Auth ligger i Caddy),
 * PWA, native mobile-app eller Share Sheet-extension,
-* automatisk bakgrundsbevakning av Ingest Source.
+* offlineanteckningar och synkronisering,
+* sökning i KO eller dokumenttext,
+* skydd mot inaktuella formulär och dubbla aktiva AI-jobb,
+* automatisk backupgallring.
 
-Katalogbaserad PDF-ingest körs som ett explicit kommando. Webb-upload är en manuell webbfunktion. Inget av flödena är en kontinuerlig bakgrundstjänst.
+Workern kontrollerar ingestkön automatiskt. Webb-upload kräver en manuell
+uppladdning men inget manuellt `process-ingest` efteråt.
 
-## Manuellt acceptanstest för fjärråtkomst
+## Verifierad fjärranvändning
 
-Det verkliga Tailscale-flödet behöver verifieras manuellt på dina enheter:
-
-1. Starta Dokumentverkstad på serverdatorn med `python -m dokumentverkstad start`.
-2. Starta Tailscale Serve med `tailscale serve 8000` eller `tailscale serve localhost:8000`.
-3. Kontrollera adressen med `tailscale serve status`.
-4. Anslut mobil, iPad eller annan dator till samma tailnet.
-5. Öppna Serve-adressen från klientenheten.
-6. Navigera i Documents och Inbox.
-7. Ladda upp en verklig PDF via "Lägg till PDF".
-8. Verifiera att den visas som ett normalt Document i Archive/Inbox.
+MVP-acceptansen omfattade två verkliga klienter, HTTPS/auth, PDF-upload med
+automatisk ingest, noteringar, AI utan aktiv klient och persistence efter
+reboot. Det rapporterade protokollet finns i DEPLOYMENT.md. Detta är
+genomförd driftverifiering, inte ett krav att upprepa när guiden läses.

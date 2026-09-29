@@ -18,6 +18,14 @@ Arkitekturen ska stödja:
 
 Arkitekturen beskriver systemets komponenter och deras ansvar. Den beskriver inte en specifik installation.
 
+Dokumentet innehåller även designriktning. I v0.1.0 finns endast PDF-pipelinen,
+inte ett generellt formatadapterlager. Att lägga till originalfil på ett
+befintligt manuellt Document saknar användarflöde. Trash gäller Documents
+utan automatisk gallring. Självobservation visar statistik men genererar
+inte förbättringsförslag. SQLite innehåller dokumentmetadata; webbens
+metadatafilter läser Archive direkt och fulltextsökning saknas.
+Se USER_GUIDE.md för aktuell användning och ROADMAP.md för planerad utveckling.
+
 Dokumentverkstad ska vara plattformsoberoende. Operativsystemsspecifik funktionalitet ska isoleras till tunna adapterlager.
 
 ---

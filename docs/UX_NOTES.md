@@ -8,6 +8,8 @@ Syftet är inte att beskriva önskad implementation, utan att dokumentera frikti
 
 En observation bör i första hand beskriva **vad som händer**, därefter **varför det känns problematiskt eller fungerar bra**, och först i tredje hand föreslå en möjlig lösning.
 
+Daterade observationer bevaras som historik. Statusnotiser nedan skiljer senare kodstöd från den ursprungliga upplevelsen; de innebär inte ny driftverifiering.
+
 Observationerna utgör underlag för senare design- och implementationsbeslut. Att något finns dokumenterat här innebär inte i sig att det ska implementeras.
 
 ---
@@ -17,6 +19,8 @@ Observationerna utgör underlag för senare design- och implementationsbeslut. A
 ## Ingest
 
 ### Importerade filer ligger kvar efter ingest
+
+**Status vid dokumentationsstädning av v0.1.0:** Löst i normal v0.1.0-ingest: lyckade importer och dubbletter flyttas till Runtime/ingest/processed. Städning av Runtime är fortfarande en separat backlogpunkt.
 
 **Observation**
 
@@ -170,6 +174,8 @@ Länken tillför ingen information.
 
 ### Dokumentmetadata behöver kunna utvecklas
 
+**Status vid dokumentationsstädning av v0.1.0:** Delvis löst: titel, upphov och år kan redigeras i Document-vyn. Bredare bibliografisk metadata återstår.
+
 **Observation**
 
 Det finns idag ingen naturlig möjlighet att komplettera eller förbättra dokumentets metadata.
@@ -315,6 +321,8 @@ Exempel är:
 
 ### Metadata kan ibland extraheras från filnamn
 
+**Status vid dokumentationsstädning av v0.1.0:** Implementerat: mönstret ÅÅÅÅ Titel.pdf används som fallback när användbar PDF-metadata saknas.
+
 **Observation**
 
 Mitt befintliga dokumentarkiv följer i hög grad mönstret:
@@ -357,6 +365,8 @@ Det gör det lättare att skilja mellan dokument som bara finns i arkivet och do
 ## AI-review
 
 ### Felaktiga review-beslut måste kunna rättas
+
+**Status vid dokumentationsstädning av v0.1.0:** Implementerat: tidigare reviewbeslut kan korrigeras via Tidigare AI-granskning; originalförslag och historik bevaras.
 
 **Observation**
 
@@ -494,6 +504,8 @@ Det bör vara lätt att snabbt återfå:
 
 ### Captures måste kunna korrigeras i efterhand
 
+**Status vid dokumentationsstädning av v0.1.0:** Implementerat: innehåll och källposition kan redigeras med historik.
+
 **Observation**
 
 Jag gjorde en felaktig sidhänvisning i en Capture och upptäckte att det inte finns något naturligt sätt att korrigera den.
@@ -511,6 +523,8 @@ En sådan redigering bör följa systemets princip om historik: den tidigare ver
 ## Documents
 
 ### Document-listan behöver visa bearbetningsstatus
+
+**Status vid dokumentationsstädning av v0.1.0:** Delvis löst: listan visar slutförd AI-analys och antal egna noteringar. Detta är inte en generell processing-statusmodell.
 
 **Observation**
 
@@ -620,6 +634,8 @@ Det behöver framför allt fastställas:
 
 ### Reproducerbar backup och restore behövs sannolikt
 
+**Status vid dokumentationsstädning av v0.1.0:** Löst och driftverifierat i MVP: ZIP-backup, off-server-readback, separat restore, rebuild och skrivtest. Retention är ännu manuell; se DEPLOYMENT.md.
+
 **Observation**
 
 Dokumentverkstad behöver kunna flyttas mellan installationer och återställas utan att användaren behöver förstå alla interna kataloger.
@@ -647,6 +663,8 @@ En återställning på en ny installation ska kunna återskapa ett fungerande Do
 ## Installation och första körning
 
 ### Initial konfiguration behöver ett eget flöde
+
+**Status vid dokumentationsstädning av v0.1.0:** Delvis löst: CLI init skapar config/kataloger och kan initiera krypterade secrets. En fullständig installationsguide i UI finns inte.
 
 **Observation**
 
@@ -752,6 +770,8 @@ Undersök om befintligt Runtime/SQLite-index bör utökas för listning, räknar
 
 ### Lång väntetid vid AI-körningar
 
+**Status vid dokumentationsstädning av v0.1.0:** Det synkrona AI-anropet är ersatt av workerjobb i v0.1.0. Körning utan aktiv klient är driftverifierad. Providerlatens kvarstår.
+
 AI-körningar blockerar HTTP-requesten. Ett verkligt AI-anrop tog cirka 86 sekunder, varav nästan hela tiden låg hos AI-providern. 
 
 **Bedömning**
@@ -774,6 +794,8 @@ Testa att istället låta användaren komma tillbaka till documents-sidan efter 
 
 Utgivningsår bör vara default i sorteringen av documents-vyn, inte Senast tillagd.
 
+**Status v0.1.0:** genomfört; år är standardordning och manuell dokumentregistrering ligger på en separat sida.
+
 Att skapa nya Documents utan uppladdning genom ingest behöver inte vara den översta funktionen i denna vy. Än så länge har detta skett väldigt sällan. Att skapa nya documents utan ingest bör betraktas som ett specialfall och skulle kunna ha en egen ingång.
 
 ### Projects
@@ -783,6 +805,8 @@ Projects används som användarcentrerade sammanhang snarare än som en konsekve
 ### AI review
 
 När ett dokument gått igenom en AI-review och hamnat i inboxen, behöver inboxen också innehålla en länk till dokumentet.
+
+**Status v0.1.0:** Inbox grupperar väntande AI-review per Document med antal och länk till dokumentet.
 
 # 2026-09-10
 
@@ -802,6 +826,8 @@ Finns det en poäng med möjligheten att göra en AI-analys av flera dokument sa
 
 ## Jobbstatus pågående AI-körningar
 
+**Status vid dokumentationsstädning av v0.1.0:** Delvis stöd finns: Document-vyn visar planned/running vid sidladdning. Tydligare status och backendskydd mot dubbla jobb är planerade för v0.2.0, inte implementerade.
+
 Synlig AI-jobbstatus i gränssnittet. När en AI-analys har startats men ännu inte är färdig ska dokumentvyn visa ett diskret tillstånd, exempelvis ”AI-analys pågår”. Det ska bygga på befintlig jobbstatus (planned/running) och inte kräva att klienten hålls öppen. Automatisk uppdatering/pollning kan övervägas senare. Förtydligande vid MVP-avslut 2026-09-29: hela denna UX-förbättring är post-MVP enligt BACKLOG, inte ett MVP-acceptanskrav.
 
 ## Filtrering i dokumentvyn
@@ -819,6 +845,8 @@ Prestandaproblemen i /documents verkar ha lösts efter flytten till VPS-miljö. 
 # 2026-09-28
 
 ## Ta bort dokument
+
+**Status vid dokumentationsstädning av v0.1.0:** Delvis stöd finns i v0.1.0: kasta från Inbox, återställ från Trash och permanent radering av dokument utan KO-/AI-run-referenser. Borttagning av bara originalfil, egna noteringar eller projekt saknar UI-flöde.
 
 Det måste finnas möjlighet att radera dokument, eller ta bort filer som hör till dokument om det blivit fel. Sådan möjlighet saknas idag, vilket är frustrerande.
 

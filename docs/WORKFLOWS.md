@@ -2,7 +2,7 @@
 
 ## Syfte
 
-Detta dokument beskriver hur användaren arbetar med Dokumentverkstad.
+Detta dokument beskriver arbetsflöden med kodstöd i v0.1.0. Rapporterad driftverifiering finns i DEPLOYMENT.md; framtida produktmål finns i ROADMAP.md.
 
 Arbetsflödena utgår från användarens mål och beslut. De beskriver inte implementationens interna kodstruktur.
 
@@ -29,14 +29,14 @@ I första versionen är filen en PDF.
 
 ## Utlösande handling
 
-Användaren placerar filen i en konfigurerad Ingest Source.
+Användaren laddar upp PDF via webbgränssnittet eller placerar en färdig fil i konfigurerad Ingest Source.
 
 ## Systemets arbete
 
 Dokumentverkstad:
 
-1. upptäcker filen,
-2. väntar tills den är färdigsynkroniserad,
+1. köar webbuppladdningen eller upptäcker en PDF i ingestkatalogen,
+2. låter workern hämta filen för bearbetning,
 3. kopierar den till lokal staging,
 4. beräknar checksumma,
 5. kontrollerar om filen redan är registrerad,
@@ -45,6 +45,12 @@ Dokumentverkstad:
 8. extraherar teknisk och tillgänglig bibliografisk metadata,
 9. extraherar text om möjligt,
 10. registrerar dokumentet i indexet.
+
+Ingest väntar inte på att en externt kopierad fil är färdigskriven.
+Överföringen måste därför publicera färdiga PDF:er i kön. Uploadsvaret
+bekräftar endast köning. Dubbletter skapar inget nytt Document.
+Bearbetningsfel flyttar filen till `ingest_source/failed` med felinformation;
+workern fortsätter med andra filer. OCR ingår inte.
 
 ## Användarens beslut
 
@@ -97,9 +103,9 @@ Valfritt:
 
 * författare
 * år
-* upplaga
-* språk
-* kommentar
+
+Webbformuläret erbjuder titel, upphov och år. Datamodellen har även fält
+för upplaga, språk och kommentar, men de exponeras inte i detta formulär.
 
 ## Systemets arbete
 
@@ -114,7 +120,7 @@ Dokumentverkstad:
 
 Ett Document finns i kunskapsrummet utan digital originalfil.
 
-En digital fil kan kopplas till dokumentet senare.
+Att senare koppla en digital originalfil till ett befintligt manuellt Document saknar användarflöde i v0.1.0.
 
 ---
 
@@ -160,13 +166,13 @@ Dokumentverkstad:
 2. sparar skapare och tidpunkt,
 3. sparar eventuell Document-koppling,
 4. sparar eventuell Source Location,
-5. lämnar semantisk typ oklassificerad om användaren inte anger annat.
+5. sparar noteringen med semantisk typ `unknown`; UI:t erbjuder ingen typklassificering.
 
 ## Beständigt resultat
 
 Tanken är bevarad med minsta möjliga friktion.
 
-Struktur och precision kan förbättras senare.
+Innehåll och källposition kan redigeras med bevarad historik. Sparande kräver serverkontakt; offline och konfliktskydd finns inte i v0.1.0.
 
 ---
 
@@ -188,7 +194,7 @@ Användaren väljer:
 
 Dokumentverkstad:
 
-1. kontrollerar dokumentets behandlingstillstånd,
+1. kontrollerar att extraherad text finns och kan användas,
 2. visar vilka capabilities som ska användas,
 3. visar vald AI-provider och modell,
 4. uppskattar input- och output-token,
@@ -206,14 +212,15 @@ Exempel på capabilities:
 
 Användaren kan:
 
-* godkänna molnbehandling,
-* välja bort arbetsmoment,
-* starta analysen,
-* avbryta.
+* godkänna molnbehandling och köa den samlade analysen,
+* lämna bekräftelsesidan utan att starta.
+
+Enskilda capabilities kan inte väljas bort i v0.1.0. Ett redan köat jobb
+har inget avbrytflöde i UI:t.
 
 ## Systemets arbete efter godkännande
 
-AI-resultaten sparas som kandidater med:
+Workern kör det planerade jobbet även om klienten stängs. AI-resultaten sparas som kandidater med:
 
 * provider,
 * modell,
@@ -228,7 +235,7 @@ AI-resultaten sparas som kandidater med:
 
 AI-genererade Knowledge Objects och andra förslag läggs i review-kön.
 
-Efter körningen visas faktisk kostnad.
+Efter körningen visas kostnad beräknad från rapporterade token och kodens pristabell, inte en leverantörsfaktura. Ladda om dokumentvyn för status och resultat. Misslyckade jobb sparas som `failed`; avbrutna `running`-jobb markeras som misslyckade vid workerstart. Dubbla startanrop spärras inte i v0.1.0.
 
 ---
 
@@ -271,7 +278,7 @@ Dokumentverkstad bevarar:
 
 Accepterade Knowledge Objects blir del av kunskapsrummet.
 
-Avvisade kandidater bevaras endast i den omfattning som behövs för historik och självobservation.
+Även avvisade kandidater bevaras i Archive med originalförslag och historik; ingen automatisk gallring görs. Projektförslag har ett separat flöde för att koppla dokumentet till ett befintligt projekt eller avvisa, inte samma acceptansflöde som övriga kandidater.
 
 ---
 
@@ -290,7 +297,7 @@ Användaren väljer att skapa en koppling.
 Användaren kan exempelvis:
 
 * lägga Knowledge Object i ett Project,
-* koppla det till ett Document,
+* skapa en notering med Document-koppling från dokumentvyn,
 * koppla det till ett annat Knowledge Object,
 * ange att två objekt "hör ihop".
 
@@ -302,10 +309,13 @@ Dokumentverkstad skapar och sparar relationen med:
 
 * objekt A,
 * objekt B,
-* skapare,
+* relationstypen "hör ihop med",
 * tidpunkt,
-* eventuell fritext,
-* eventuell confidence.
+* eventuell kommentar.
+
+Detta gäller relationer mellan KO. Projektkopplingar sparas i objektets
+`project_ids`. Befintliga noteringar kan inte fritt kopplas om till andra
+Documents via redigeringsformuläret.
 
 ## Beständigt resultat
 
@@ -315,37 +325,27 @@ Kunskapsrummet blir rikare utan att objekten dupliceras.
 
 # Workflow 7: Kasta och återställa
 
-## Utgångsläge
+## Utgångsläge och handling
 
-Användaren bedömer att ett Document, Knowledge Object eller Project inte längre behövs.
-
-## Utlösande handling
-
-Användaren väljer:
-
-> Kasta
+Användaren väljer Kasta för ett Document i Inbox. Borttagning av Knowledge
+Objects och Projects finns inte i v0.1.0.
 
 ## Systemets arbete
 
-Objektet flyttas till Trash.
-
-Det raderas inte permanent.
-
-Systemet registrerar:
-
-* tidpunkt,
-* ursprunglig plats,
-* planerat datum för permanent radering.
+Document får status `trashed` i sin metadata och visas i Trash. Originalfil
+och övrig data flyttas inte till en separat fysisk papperskorg.
 
 ## Användarens möjligheter
 
-Under 30 dagar kan användaren:
+Från Trash kan användaren återställa dokumentet till status `new` och Inbox.
+Identiteten behålls. Permanent radering kräver uttrycklig bekräftelse och
+blockeras om det finns kopplade Knowledge Objects eller AI runs.
 
-* återställa objektet,
-* radera det permanent tidigare.
-
-Efter 30 dagar kan Dokumentverkstad radera objektet permanent enligt konfiguration.
+Ingen 30-dagarstimer eller automatisk permanent radering finns. Dokument
+ligger kvar tills de återställs eller kan raderas manuellt. Det finns inget
+separat flöde för att bara ta bort originalfilen.
 
 ## Beständigt resultat
 
-Irreversibel radering sker aldrig direkt genom ett vanligt användarbeslut.
+Återställning bevarar befintligt dokument och dess kopplingar. Tillåten
+permanent radering tar bort dokumentkatalogen.

@@ -4,8 +4,8 @@ Dokumentverkstad är en personlig dokument- och kunskapsmiljö för kumulativt
 kunskapsarbete.
 
 Den bevarar dokument, egna noteringar och AI-stödda kunskapsförslag i ett
-öppet arkiv där människans granskning är avgörande. Ambitionen är ett enda
-auktoritativt Archive som kan köras på en egen server, medan datorer, telefoner
+öppet arkiv där människans granskning är avgörande. Den verifierade v0.1.0
+kör ett enda auktoritativt Archive på en egen server, medan datorer, telefoner
 och surfplattor fungerar som klienter till samma kunskapsrum.
 
 ## Idé
@@ -28,7 +28,7 @@ Den nuvarande implementationen innehåller:
 * PDF-ingest via konfigurerad ingest-katalog och webbuppladdning,
 * gemensam ingest-semantik med checksumma, dublettkontroll, textutvinning,
   metadata och bevarad originalfil,
-* dokumentbibliotek och dokumentvy med metadata, källtext, noteringar och
+* dokumentbibliotek och dokumentvy med metadata, original-PDF, noteringar och
   AI-granskning,
 * projekt som frivilliga sammanhang, inte mappar eller obligatoriska kategorier,
 * fristående noteringar samt noteringar i dokument- och projektsammanhang,
@@ -38,9 +38,10 @@ Den nuvarande implementationen innehåller:
 * backup, restore, återskapande av index, statuskommando och driftloggning,
 * separat web- och workerprocess för serverdrift.
 
-Dokumentverkstad har ännu inte publik webbexponering, inloggning, HTTPS,
-reverse proxy, DNS-konfiguration, OCR, EPUB, semantic search, embeddings eller
-RAG.
+Extern webbåtkomst via Caddy med HTTPS och Basic Auth är driftverifierad.
+Applikationen har ingen egen användardatabas eller sessionsinloggning.
+OCR, EPUB, kunskapssökning, offline-synk, externt kunskaps-API, semantisk
+sökning, embeddings och RAG finns inte i v0.1.0.
 
 ## Kunskapsmodell
 
@@ -180,7 +181,7 @@ layout:
   ingest/
 ```
 
-Web och worker kan köras som två separata systemd-tjänster:
+I verifierad serverdrift körs web och worker som separata systemd-tjänster:
 
 ```text
 dokumentverkstad-web.service
@@ -193,9 +194,15 @@ Den verifierade serverkonfigurationen lyssnar endast på:
 127.0.0.1:8000
 ```
 
-Externa klienter, domännamn, reverse proxy, HTTPS, autentisering och firewall
-hör till kommande deploymentarbete. Exponera inte port 8000 direkt mot
-internet.
+Caddy ger extern HTTPS-åtkomst med Basic Auth. Tvåklientsflödet, AI med
+stängd klient och automatisk återstart efter VPS-reboot är verifierade.
+Port 8000 exponeras inte direkt mot internet.
+
+Daglig off-server-backup via systemd och rclone är verifierad, inklusive
+återläsning, SHA-256 och separat restore med indexrebuild och skrivtest.
+Archive ingår i backupen; Runtime, ingestkön och secrets ingår inte.
+Gallring är manuell i v0.1.0. Kör direkt `backup` endast när Archive inte
+ändras; följ DEPLOYMENT.md för schemalagd backup och restore.
 
 Detaljer finns i [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
@@ -220,17 +227,17 @@ Bra läsordning:
    - gränssnitt och visuell identitet.
 8. [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - lokal drift, Linux/VPS och
    systemd.
-9. [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) - aktuell
-   utvecklingsplan.
+9. [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) - historiken
+   fram till godkänd MVP-acceptans.
 10. [docs/BACKLOG.md](docs/BACKLOG.md) - medvetet uppskjutna idéer och
     framtida kandidater.
+11. [docs/ROADMAP.md](docs/ROADMAP.md) - planerad utveckling efter MVP mot v1.0.
+12. [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) och [AGENTS.md](AGENTS.md) -
+    utvecklingsarbete, installation och testkommandon.
 
 ## Projektstatus
 
-Dokumentverkstad är ett pågående personligt kunskapssystem. Kärnflödena för
-lokal användning, serverförberedelse, systemd-drift, PDF-ingest, dokument,
-projekt, noteringar och AI-granskning finns implementerade.
-
-Nästa större område är fortsatt server-/deploymentarbete: privat åtkomst från
-andra enheter, reverse proxy, HTTPS, autentisering, firewall och backupstrategi
-för faktisk drift.
+**v0.1.0 / MVP COMPLETE**, godkänd 2026-09-29. Driftacceptans och det
+rapporterade Linux-testresultatet 183/183 finns i DEPLOYMENT.md.
+ROADMAP.md beskriver kommande arbete; dess v0.2.0-funktioner är inte
+implementerade i v0.1.0.
